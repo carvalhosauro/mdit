@@ -1,3 +1,3 @@
 module github.com/carvalhosauro/mdit
 
-go 1.21
+go 1.26
