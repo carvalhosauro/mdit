@@ -54,9 +54,13 @@ func TestFinder_OpenFilterEnterEsc(t *testing.T) {
 		return strings.Contains(ansi.Strip(string(bts)), "Notes")
 	}, teatest.WithDuration(2*time.Second))
 	tm.Send(tea.KeyMsg{Type: tea.KeyEscape})
+	// The finder is an overlay: closing it only repaints the box rows, so the
+	// diff renderer never re-emits untouched text. Move the cursor to force a
+	// status bar rewrite, proving the editor is live again.
+	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
 	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
 		s := ansi.Strip(string(bts))
-		return strings.Contains(s, "beta.md") && !strings.Contains(s, "Notes")
+		return strings.Contains(s, "beta.md") && !strings.Contains(s, "Notes (")
 	}, teatest.WithDuration(3*time.Second))
 
 	waitQuit(t, tm)

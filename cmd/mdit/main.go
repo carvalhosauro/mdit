@@ -36,7 +36,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	app := ui.NewApp(v, initial, theme.DefaultDark())
+	app := ui.NewApp(v, initial, theme.Default())
 
 	// Panic guard: dump the buffer next to the open file, then re-panic.
 	// Bubble Tea restores the terminal on its own unwind path.

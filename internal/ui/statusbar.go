@@ -4,28 +4,33 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 )
 
-const statusHints = "^S save ^P notes ^E zen ^Q quit"
+const statusHints = "^S save  ^P notes  ^E zen  ^G help"
 
+// renderStatusBar draws the bottom bar with a clear hierarchy: file name
+// (bold) and dirty marker (accent) first, key hints dimmed, and on the right a
+// transient flash ("✓ saved"), an error, and the cursor position.
 func (a *App) renderStatusBar() string {
+	th := a.theme
 	d := a.editor.Doc()
 	cur := a.editor.Cursor()
 
 	name := a.fileName()
 	dirty := ""
 	if d.Dirty() {
-		dirty = " [+]"
+		dirty = " ●"
 	}
-	left := fmt.Sprintf("%s%s │ %d:%d │ %s", name, dirty, cur.Line+1, cur.Col+1, statusHints)
+	pos := fmt.Sprintf("%d:%d", cur.Line+1, cur.Col+1)
 
-	right := ""
-	rightStyle := a.theme.StatusBar
+	msg := ""
+	msgStyle := th.StatusBarOK
 	if a.statusErr != "" {
-		right = a.statusErr
-		rightStyle = a.theme.StatusBarError
+		msg = a.statusErr
+		msgStyle = th.StatusBarError
+	} else if a.statusMsg != "" {
+		msg = a.statusMsg
 	}
 
 	w := a.width
@@ -33,32 +38,49 @@ func (a *App) renderStatusBar() string {
 		w = 1
 	}
 
-	leftW := runewidth.StringWidth(left)
-	rightW := runewidth.StringWidth(right)
-	pad := w - leftW - rightW
-	if pad < 1 {
-		// Prefer showing the left side; truncate left if needed.
-		avail := w - rightW
+	rightPlain := pos
+	if msg != "" {
+		rightPlain = msg + "  " + pos
+	}
+	rightW := runewidth.StringWidth(rightPlain)
+
+	// Left side: prefer dropping hints, then truncating the name, over ever
+	// pushing the message/position off screen.
+	hints := "  " + statusHints
+	leftW := runewidth.StringWidth(name+dirty) + runewidth.StringWidth(hints)
+	if leftW+rightW+1 > w {
+		hints = ""
+		leftW = runewidth.StringWidth(name + dirty)
+	}
+	if leftW+rightW+1 > w {
+		avail := w - rightW - 1 - runewidth.StringWidth(dirty)
 		if avail < 0 {
 			avail = 0
 		}
-		left = truncateCells(left, avail)
-		leftW = runewidth.StringWidth(left)
-		pad = w - leftW - rightW
-		if pad < 0 {
-			pad = 0
-		}
+		name = truncateCells(name, avail)
+		leftW = runewidth.StringWidth(name+dirty) + runewidth.StringWidth(hints)
 	}
 
-	line := left + strings.Repeat(" ", pad) + right
-	style := a.theme.StatusBar.Width(w)
-	if right != "" {
-		// Paint left with StatusBar and right with error style, then join.
-		leftStyled := a.theme.StatusBar.Render(left + strings.Repeat(" ", pad))
-		rightStyled := rightStyle.Render(right)
-		return lipgloss.JoinHorizontal(lipgloss.Top, leftStyled, rightStyled)
+	pad := w - leftW - rightW
+	if pad < 0 {
+		pad = 0
 	}
-	return style.Render(line)
+
+	var b strings.Builder
+	b.WriteString(th.StatusBarName.Render(name))
+	if dirty != "" {
+		b.WriteString(th.StatusBarDirty.Render(dirty))
+	}
+	if hints != "" {
+		b.WriteString(th.StatusBarHint.Render(hints))
+	}
+	b.WriteString(th.StatusBar.Render(strings.Repeat(" ", pad)))
+	if msg != "" {
+		b.WriteString(msgStyle.Render(msg))
+		b.WriteString(th.StatusBar.Render("  "))
+	}
+	b.WriteString(th.StatusBarHint.Render(pos))
+	return b.String()
 }
 
 func truncateCells(s string, max int) string {

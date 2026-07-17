@@ -122,6 +122,14 @@ func (m Model) Zen() bool { return m.zen }
 // Scroll returns the top screen row of the viewport.
 func (m Model) Scroll() int { return m.scroll }
 
+// CursorViewportRowCol returns the cursor's position relative to the visible
+// viewport: row in [0, height) and cell column. The UI layer uses it to anchor
+// popups (e.g. wikilink autocomplete) next to the cursor.
+func (m Model) CursorViewportRowCol() (row, col int) {
+	r, c := m.cursorScreenRowCol()
+	return r - m.scroll, c
+}
+
 // SetScroll sets the viewport scroll offset (clamped).
 func (m *Model) SetScroll(s int) {
 	m.scroll = s
