@@ -78,23 +78,8 @@ func (a *App) handleAutocompleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.acIndex++
 		}
 		return a, nil
-	case tea.KeyEnter:
-		if len(a.acItems) == 0 {
-			a.mode = modeEdit
-			a.acActive = false
-			return a, nil
-		}
-		name := a.acItems[a.acIndex]
-		q := a.autocompleteQuery()
-		m := a.editor
-		for range []rune(q) {
-			m, _ = m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
-		}
-		m.InsertText(name + "]]")
-		a.editor = m
-		a.mode = modeEdit
-		a.acActive = false
-		return a, nil
+	case tea.KeyEnter, tea.KeyTab:
+		return a.acceptAutocomplete()
 	}
 
 	var cmd tea.Cmd
@@ -115,39 +100,84 @@ func (a *App) handleAutocompleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, cmd
 }
 
-func (a *App) viewAutocomplete() string {
-	ed := a.editor.View()
-	popup := a.renderACPopup()
-	bar := a.renderStatusBar()
-	if popup == "" {
-		return ed + "\n" + bar
+// acceptAutocomplete replaces the typed query with the selected note name and
+// closes the popup. Tab and Enter both accept (terminal completion reflex).
+func (a *App) acceptAutocomplete() (tea.Model, tea.Cmd) {
+	if len(a.acItems) == 0 {
+		a.mode = modeEdit
+		a.acActive = false
+		return a, nil
 	}
-	return ed + "\n" + popup + "\n" + bar
+	name := a.acItems[a.acIndex]
+	q := a.autocompleteQuery()
+	m := a.editor
+	for range []rune(q) {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	}
+	m.InsertText(name + "]]")
+	a.editor = m
+	a.mode = modeEdit
+	a.acActive = false
+	return a, nil
+}
+
+// viewAutocomplete draws the editor with the completion popup anchored at the
+// cursor — the popover originates from its trigger, and the total line count
+// stays exactly the terminal height (no layout jump).
+func (a *App) viewAutocomplete() string {
+	bg := a.editor.View() + "\n" + a.renderStatusBar()
+	popup := a.renderACPopup()
+
+	row, col := a.editor.CursorViewportRowCol()
+	ph := lipgloss.Height(popup)
+	pw := lipgloss.Width(popup)
+	edH := a.height - 1
+
+	// Below the cursor line by default; flip above when there is no room.
+	y := row + 1
+	if y+ph > edH && row-ph >= 0 {
+		y = row - ph
+	}
+	x := col
+	if a.width > 0 && x+pw > a.width {
+		x = a.width - pw
+	}
+	if x < 0 {
+		x = 0
+	}
+	return overlayAt(bg, popup, x, y)
 }
 
 func (a *App) renderACPopup() string {
-	if len(a.acItems) == 0 {
-		return lipgloss.NewStyle().Faint(true).Render("(no matches)")
-	}
-	const maxShow = 8
-	start := 0
-	if a.acIndex >= maxShow {
-		start = a.acIndex - maxShow + 1
-	}
-	end := start + maxShow
-	if end > len(a.acItems) {
-		end = len(a.acItems)
-	}
+	th := a.theme
 	var b strings.Builder
-	b.WriteString(lipgloss.NewStyle().Bold(true).Render("link:"))
-	for i := start; i < end; i++ {
+	b.WriteString(th.MenuTitle.Render("[[ link"))
+	if len(a.acItems) == 0 {
 		b.WriteByte('\n')
-		name := a.acItems[i]
-		if i == a.acIndex {
-			b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#89B4FA")).Render("> " + name))
-		} else {
-			b.WriteString("  " + name)
+		b.WriteString(th.Dim.Render("no matches"))
+	} else {
+		const maxShow = 8
+		start := 0
+		if a.acIndex >= maxShow {
+			start = a.acIndex - maxShow + 1
+		}
+		end := start + maxShow
+		if end > len(a.acItems) {
+			end = len(a.acItems)
+		}
+		for i := start; i < end; i++ {
+			b.WriteByte('\n')
+			name := a.acItems[i]
+			if i == a.acIndex {
+				b.WriteString(th.MenuSelected.Render("▸ " + name))
+			} else {
+				b.WriteString(th.Menu.Render("  " + name))
+			}
 		}
 	}
-	return b.String()
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(th.MenuBorder.GetForeground()).
+		Padding(0, 1).
+		Render(b.String())
 }

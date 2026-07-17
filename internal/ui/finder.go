@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"fmt"
+	"path/filepath"
+
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -8,11 +11,12 @@ import (
 
 type noteItem struct {
 	name, path string
+	dir        string // vault-relative directory, "" at the root
 }
 
 func (n noteItem) FilterValue() string { return n.name }
 func (n noteItem) Title() string       { return n.name }
-func (n noteItem) Description() string { return "" }
+func (n noteItem) Description() string { return n.dir }
 
 func newFinderList(items []list.Item, width, height int) list.Model {
 	d := list.NewDefaultDelegate()
@@ -31,14 +35,30 @@ func newFinderList(items []list.Item, width, height int) list.Model {
 func (a *App) refreshFinderItems() {
 	if a.vault == nil {
 		a.finder.SetItems(nil)
+		a.finder.Title = "Notes"
 		return
 	}
 	notes := a.vault.List()
+	root := a.vault.Root()
 	items := make([]list.Item, len(notes))
+	hasSubdir := false
 	for i, n := range notes {
-		items[i] = noteItem{name: n.Name, path: n.Path}
+		dir := ""
+		if rel, err := filepath.Rel(root, filepath.Dir(n.Path)); err == nil && rel != "." {
+			dir = rel
+			hasSubdir = true
+		}
+		items[i] = noteItem{name: n.Name, path: n.Path, dir: dir}
 	}
 	a.finder.SetItems(items)
+	a.finder.Title = fmt.Sprintf("Notes (%d)", len(items))
+
+	// Show the directory line only when it disambiguates something; a flat
+	// vault keeps single-line rows (twice the visible items).
+	d := list.NewDefaultDelegate()
+	d.ShowDescription = hasSubdir
+	d.SetSpacing(0)
+	a.finder.SetDelegate(d)
 }
 
 func (a *App) resizeFinder() {
@@ -67,6 +87,7 @@ func (a *App) openFinder() {
 	a.resizeFinder()
 	a.mode = modeFinder
 	a.statusErr = ""
+	a.statusMsg = ""
 }
 
 func (a *App) handleFinderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -94,11 +115,14 @@ func (a *App) handleFinderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, cmd
 }
 
+// viewFinder draws the finder as a modal over the dimmed editor, so the note
+// being edited stays visible as context instead of vanishing.
 func (a *App) viewFinder() string {
-	box := a.finder.View()
-	frame := lipgloss.NewStyle().
+	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
+		BorderForeground(a.theme.MenuBorder.GetForeground()).
 		Padding(0, 1).
-		Render(box)
-	return centerBlock(frame, a.width, a.height)
+		Render(a.finder.View())
+	bg := a.dimContent(a.editor.View() + "\n" + a.renderStatusBar())
+	return overlayCenter(bg, box, a.width, a.height)
 }

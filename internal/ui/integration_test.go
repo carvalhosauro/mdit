@@ -32,7 +32,7 @@ func TestIntegration_MVPFlow(t *testing.T) {
 	tm.Send(tea.KeyMsg{Type: tea.KeyEnd})
 	tm.Type(" [[")
 	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
-		return strings.Contains(ansi.Strip(string(bts)), "link:")
+		return strings.Contains(ansi.Strip(string(bts)), "[[ link")
 	}, teatest.WithDuration(3*time.Second))
 	tm.Type("dest")
 	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
