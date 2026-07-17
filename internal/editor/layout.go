@@ -251,8 +251,13 @@ func (m Model) cursorScreenRowCol() (int, int) {
 }
 
 // followCursor adjusts the scroll offset so the cursor's screen row stays within
-// the viewport, then clamps scroll to the valid range.
+// the viewport, then clamps scroll to the valid range. In zen mode the user
+// scrolls freely (cursor is not painted), so followCursor is a no-op.
 func (m *Model) followCursor() {
+	if m.zen {
+		m.clampScroll()
+		return
+	}
 	row, _ := m.cursorScreenRowCol()
 	if row < m.scroll {
 		m.scroll = row

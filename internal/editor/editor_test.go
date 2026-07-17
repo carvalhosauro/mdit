@@ -245,3 +245,51 @@ func TestKeys_CJKWidthCursorMapping(t *testing.T) {
 		t.Fatalf("cursor after two wide runes should be at cell 4, got %d", col)
 	}
 }
+
+func TestZen_ArrowScrollsViewport(t *testing.T) {
+	// Many paragraphs so rendered height exceeds the viewport.
+	var b strings.Builder
+	for i := 0; i < 40; i++ {
+		b.WriteString("paragraph line number ")
+		b.WriteByte(byte('A' + i%26))
+		b.WriteString("\n\n")
+	}
+	m := newEditor(t, b.String(), 40, 6)
+	m.SetZen(true)
+	curBefore := m.Cursor()
+	if m.Scroll() != 0 {
+		t.Fatalf("expected scroll 0, got %d", m.Scroll())
+	}
+
+	m, _ = key(m, typeKey(tea.KeyDown))
+	if m.Scroll() != 1 {
+		t.Fatalf("Down should scroll by 1, got %d", m.Scroll())
+	}
+	if m.Cursor() != curBefore {
+		t.Fatalf("zen scroll must not move cursor: before=%v after=%v", curBefore, m.Cursor())
+	}
+
+	view0 := m.View()
+	m, _ = key(m, typeKey(tea.KeyDown))
+	m, _ = key(m, typeKey(tea.KeyDown))
+	view3 := m.View()
+	if view0 == view3 {
+		t.Fatalf("scrolling should change View content")
+	}
+
+	m, _ = key(m, typeKey(tea.KeyHome))
+	if m.Scroll() != 0 {
+		t.Fatalf("Home should scroll to 0, got %d", m.Scroll())
+	}
+
+	m, _ = key(m, typeKey(tea.KeyEnd))
+	if m.Scroll() == 0 {
+		t.Fatalf("End should scroll away from top")
+	}
+
+	ver := m.Doc().Version()
+	m, _ = key(m, runeKey('x'))
+	if m.Doc().Version() != ver {
+		t.Fatalf("typing in zen must not edit the document")
+	}
+}

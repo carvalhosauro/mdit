@@ -86,31 +86,36 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleZenKey allows only navigation/scroll in zen mode; editing is ignored.
+// handleZenKey scrolls the viewport only; editing is ignored. Cursor is left
+// untouched so exiting zen restores the edit position. View in zen mode does
+// not paint the cursor, so moving it would not change what the user sees.
 func (m Model) handleZenKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyUp:
-		m.moveVertical(-1)
+		m.scroll--
 	case tea.KeyDown:
-		m.moveVertical(1)
+		m.scroll++
 	case tea.KeyPgUp:
-		m.movePage(-1)
-	case tea.KeyPgDown:
-		m.movePage(1)
-	case tea.KeyHome:
-		m.cursor = doc.Position{}
-		m.goalCol = 0
-	case tea.KeyEnd:
-		last := m.doc.LineCount() - 1
-		if last < 0 {
-			last = 0
+		step := m.height
+		if step < 1 {
+			step = 1
 		}
-		m.cursor = doc.Position{Line: last, Col: runeLen(m.doc.Line(last))}
-		m.goalCol = m.cursor.Col
+		m.scroll -= step
+	case tea.KeyPgDown:
+		step := m.height
+		if step < 1 {
+			step = 1
+		}
+		m.scroll += step
+	case tea.KeyHome:
+		m.scroll = 0
+	case tea.KeyEnd:
+		// Large value; clampScroll pins to the last page.
+		m.scroll = 1 << 30
 	default:
 		return m, nil
 	}
-	m.recompute()
+	m.clampScroll()
 	return m, nil
 }
 
