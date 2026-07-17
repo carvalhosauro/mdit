@@ -131,3 +131,44 @@ func TestApp_QuitDirtyDiscard(t *testing.T) {
 		t.Fatalf("file was modified on discard:\nbefore=%q\nafter=%q", before, after)
 	}
 }
+
+func TestApp_QuitSaveThroughConflict(t *testing.T) {
+	root, v := setupVault(t, map[string]string{
+		"note.md": "# Orig\n\n",
+	})
+	path := filepath.Join(root, "note.md")
+	app := newApp(t, v, path)
+
+	tm := teatest.NewTestModel(t, app, teatest.WithInitialTermSize(80, 24))
+	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
+		return bytes.Contains(bts, []byte("Orig"))
+	}, teatest.WithDuration(2*time.Second))
+
+	tm.Type("LOCAL")
+	// External change bumps mtime so the next Save returns ErrExternalChange.
+	time.Sleep(10 * time.Millisecond)
+	if err := os.WriteFile(path, []byte("# External\n\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tm.Send(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
+		return bytes.Contains(bts, []byte("Unsaved changes"))
+	}, teatest.WithDuration(2*time.Second))
+
+	tm.Type("s")
+	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
+		return bytes.Contains(bts, []byte("File changed on disk"))
+	}, teatest.WithDuration(2*time.Second))
+
+	tm.Type("o")
+	tm.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "LOCAL") {
+		t.Fatalf("overwrite did not keep local edits: %q", data)
+	}
+}

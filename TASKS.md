@@ -21,7 +21,7 @@
 | 4 | `internal/mdparse` — goldmark+GFM → `[]Block` cobrindo TODAS as linhas (invariante), extensão wikilink `[[t]]`/`[[t\|alias]]`, `WikiLinkAt`, frontmatter, setext | ✅ feito + review | 53af578, 65a8ef6 |
 | 5 | `internal/theme` + `internal/render` — bloco → linhas estilizadas ≤ Width, chroma, wrap ANSI-safe, wikilink broken style | ✅ feito + review | 084878e |
 | 6 | `internal/editor` — widget virtualizado (prefix sums), bloco-sob-cursor cru, teclas de edição, undo | ✅ feito + review | e2254d4 |
-| 7 | `internal/ui` + `cmd/mdit` — app rodável, statusbar, prompts (dirty/conflito), panic recover → `.mdit-recover` | ✅ implementado; ⏳ review pendente | (pendente commit) |
+| 7 | `internal/ui` + `cmd/mdit` — app rodável, statusbar, prompts (dirty/conflito), panic recover → `.mdit-recover` | ✅ feito + review | 6a89f2f |
 | 8 | Fuzzy finder (Ctrl+P, overlay bubbles/list) | ⬜ | — |
 | 9 | Wikilinks: Ctrl+] segue, Ctrl+B volta (pilha), autocomplete popup em `[[`, broken em vermelho | ⬜ | — |
 | 10 | Zen mode (Ctrl+E, read-only, centrado ≤80 cols, preserva cursor/scroll ao voltar) | ⬜ | — |
