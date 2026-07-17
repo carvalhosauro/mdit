@@ -21,6 +21,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case tea.KeySpace:
 		return m.insertAndMaybeAutocomplete(" ")
 	case tea.KeyEnter:
+		// Enter follows a wikilink under the cursor (reachable on any keyboard);
+		// otherwise it inserts a newline as usual.
+		if cmd := m.followUnderCursor(); cmd != nil {
+			return m, cmd
+		}
 		m.cursor = m.doc.Insert(m.cursor, "\n")
 		m.goalCol = m.cursor.Col
 		m.recompute()
@@ -71,10 +76,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 
 	case tea.KeyCtrlCloseBracket:
-		if target, ok := mdparse.WikiLinkAt(m.doc.Line(m.cursor.Line), m.cursor.Col); ok {
-			t := target
-			m.recompute()
-			return m, func() tea.Msg { return FollowLinkMsg{Target: t} }
+		if cmd := m.followUnderCursor(); cmd != nil {
+			return m, cmd
 		}
 		return m, nil
 
@@ -129,6 +132,18 @@ func (m Model) insertAndMaybeAutocomplete(s string) (Model, tea.Cmd) {
 		return m, cmd
 	}
 	return m, nil
+}
+
+// followUnderCursor returns a FollowLinkMsg command when the cursor sits on a
+// wikilink, otherwise nil. Bound to both Enter and Ctrl+] so following a link is
+// reachable on keyboards where Ctrl+] is awkward to type or intercepted by the
+// terminal.
+func (m Model) followUnderCursor() tea.Cmd {
+	if target, ok := mdparse.WikiLinkAt(m.doc.Line(m.cursor.Line), m.cursor.Col); ok {
+		t := target
+		return func() tea.Msg { return FollowLinkMsg{Target: t} }
+	}
+	return nil
 }
 
 // autocompleteCmd returns an AutocompleteMsg command when the two runes ending

@@ -26,7 +26,7 @@ Requires Go 1.26+. Single static binary (`CGO_ENABLED=0`), zero config.
 ## Features
 
 - **Live inline render** — headings, lists, code, quotes styled in place; the block under the cursor stays raw for editing
-- **Obsidian-style wikilinks** — `[[note]]` / `[[note|alias]]` with follow (Ctrl+]), back (Ctrl+B), autocomplete on `[[`, and broken-link highlighting
+- **Obsidian-style wikilinks** — `[[note]]` / `[[note|alias]]` with follow (Enter or Ctrl+]), back (Ctrl+B), autocomplete on `[[`, and broken-link highlighting
 - **Fuzzy note finder** — Ctrl+P over the vault
 - **Zen mode** — Ctrl+E read-only, centered ≤80 columns
 - **Safe save** — mtime conflict prompt (overwrite / reload / cancel); panic dumps to `<file>.mdit-recover`
@@ -48,7 +48,7 @@ mdit --version
 | Ctrl+Q | Quit (prompt if unsaved) |
 | Ctrl+P | Fuzzy note finder |
 | Ctrl+E | Toggle zen mode |
-| Ctrl+] | Follow wikilink under cursor |
+| Enter / Ctrl+] | Follow wikilink under cursor |
 | Ctrl+B | Back (navigation history) |
 | Ctrl+Z / Ctrl+Y | Undo / Redo |
 | Arrows, PgUp/PgDn, Home/End | Navigate |

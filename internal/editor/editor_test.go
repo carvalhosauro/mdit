@@ -204,6 +204,40 @@ func TestKeys_FollowLinkNoLinkNoCmd(t *testing.T) {
 	}
 }
 
+func TestKeys_EnterFollowsWikilinkUnderCursor(t *testing.T) {
+	m := newEditor(t, "see [[Target]] here", 40, 6)
+	m.cursorTo(doc.Position{Line: 0, Col: 6}) // inside [[Target]]
+	before := m.Doc().Line(0)
+	_, cmd := key(m, typeKey(tea.KeyEnter))
+	if cmd == nil {
+		t.Fatalf("enter over wikilink should emit a follow cmd")
+	}
+	fl, ok := cmd().(FollowLinkMsg)
+	if !ok {
+		t.Fatalf("expected FollowLinkMsg, got %T", cmd())
+	}
+	if fl.Target != "Target" {
+		t.Fatalf("expected target 'Target', got %q", fl.Target)
+	}
+	if m.Doc().LineCount() != 1 || m.Doc().Line(0) != before {
+		t.Fatalf("enter over wikilink must not insert a newline; got %d lines, line0=%q",
+			m.Doc().LineCount(), m.Doc().Line(0))
+	}
+}
+
+func TestKeys_EnterOffWikilinkStillSplits(t *testing.T) {
+	// Line contains a wikilink but the cursor is not on it: Enter must split.
+	m := newEditor(t, "ab [[Target]]", 40, 6)
+	m.cursorTo(doc.Position{Line: 0, Col: 1}) // on "ab", not the link
+	m, cmd := key(m, typeKey(tea.KeyEnter))
+	if cmd != nil {
+		t.Fatalf("enter off wikilink should not emit a cmd")
+	}
+	if m.Doc().LineCount() != 2 || m.Doc().Line(0) != "a" || m.Doc().Line(1) != "b [[Target]]" {
+		t.Fatalf("enter off link should split: %q / %q", m.Doc().Line(0), m.Doc().Line(1))
+	}
+}
+
 func TestKeys_AutocompleteOnDoubleBracket(t *testing.T) {
 	m := newEditor(t, "", 40, 6)
 	m.cursorTo(doc.Position{Line: 0, Col: 0})

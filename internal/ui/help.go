@@ -14,7 +14,7 @@ var helpRows = []struct{ key, desc string }{
 	{"^P", "find note"},
 	{"^E", "zen mode"},
 	{"^B", "back to previous note"},
-	{"^]", "follow wikilink under cursor"},
+	{"Enter / ^]", "follow wikilink under cursor"},
 	{"[[", "wikilink autocomplete"},
 	{"^Z / ^Y", "undo / redo"},
 	{"^G", "this help"},

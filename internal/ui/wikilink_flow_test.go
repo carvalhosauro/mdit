@@ -49,6 +49,28 @@ func TestWikilink_FollowBackBrokenAutocomplete(t *testing.T) {
 	waitQuit(t, tm)
 }
 
+func TestWikilink_FollowWithEnter(t *testing.T) {
+	root, v := setupVault(t, map[string]string{
+		"a.md": "[[b]]\n",
+		"b.md": "# B Note\n\n",
+	})
+	app := newApp(t, v, filepath.Join(root, "a.md"))
+
+	tm := teatest.NewTestModel(t, app, teatest.WithInitialTermSize(80, 24))
+	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
+		return bytes.Contains(bts, []byte("[[b]]"))
+	}, teatest.WithDuration(2*time.Second))
+
+	// Cursor at 0,0 is on [[b]]; Enter follows the link (reachable on any
+	// keyboard) instead of inserting a newline.
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
+		return strings.Contains(ansi.Strip(string(bts)), "b.md")
+	}, teatest.WithDuration(3*time.Second))
+
+	waitQuit(t, tm)
+}
+
 func TestWikilink_AutocompleteInserts(t *testing.T) {
 	root, v := setupVault(t, map[string]string{
 		"a.md": "",
