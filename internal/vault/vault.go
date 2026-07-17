@@ -26,7 +26,11 @@ type Vault struct {
 // directories whose names start with "."), and returns a new Vault. It returns
 // an error if the root directory cannot be accessed.
 func Open(root string) (*Vault, error) {
-	v := &Vault{root: root}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	v := &Vault{root: absRoot}
 	if err := v.scan(); err != nil {
 		return nil, err
 	}
@@ -48,20 +52,14 @@ func (v *Vault) List() []Note {
 
 // Resolve resolves a note by name (case-insensitive). It accepts both "nota" and
 // "nota.md". If multiple notes match (differ only in path), it returns the one with
-// the shortest path. It returns ("", false) if no note matches.
+// the shortest path; if paths are equal length, the lexicographically smaller path
+// wins, so the result is deterministic. It returns ("", false) if no note matches.
 func (v *Vault) Resolve(target string) (string, bool) {
 	// Normalize target: remove .md suffix if present
 	target = strings.TrimSuffix(target, ".md")
 	target = strings.TrimSuffix(target, ".MD")
 
-	// First, try exact case-sensitive match
-	for _, n := range v.notes {
-		if n.Name == target {
-			return n.Path, true
-		}
-	}
-
-	// Fall back to case-insensitive match
+	// Match case-insensitively on Name across all notes uniformly.
 	targetLower := strings.ToLower(target)
 	var matches []Note
 	for _, n := range v.notes {
@@ -74,11 +72,15 @@ func (v *Vault) Resolve(target string) (string, bool) {
 		return "", false
 	}
 
-	// If multiple matches, return the one with shortest path
+	// Tie-break: shortest path wins; if paths are equal length, the
+	// lexicographically smaller path wins deterministically.
 	best := matches[0]
 	for i := 1; i < len(matches); i++ {
-		if len(matches[i].Path) < len(best.Path) {
-			best = matches[i]
+		m := matches[i]
+		if len(m.Path) < len(best.Path) {
+			best = m
+		} else if len(m.Path) == len(best.Path) && m.Path < best.Path {
+			best = m
 		}
 	}
 
@@ -98,9 +100,11 @@ func (v *Vault) scan() error {
 			return err
 		}
 
-		// Skip directories starting with "."
+		// Skip directories starting with "." — but not the root entry
+		// itself, so a vault rooted at a dot-prefixed directory (e.g.
+		// "~/.notes") is still indexed normally.
 		if d.IsDir() {
-			if d.Name()[0] == '.' {
+			if path != v.root && strings.HasPrefix(d.Name(), ".") {
 				return filepath.SkipDir
 			}
 			return nil
@@ -120,9 +124,15 @@ func (v *Vault) scan() error {
 		return err
 	}
 
-	// Sort by Name (case-insensitive)
-	sort.Slice(v.notes, func(i, j int) bool {
-		return strings.ToLower(v.notes[i].Name) < strings.ToLower(v.notes[j].Name)
+	// Sort by Name (case-insensitive), with Path as a deterministic
+	// secondary key so case-duplicate names (e.g. "b" vs "B") always sort
+	// in the same order regardless of sort algorithm or slice size.
+	sort.SliceStable(v.notes, func(i, j int) bool {
+		li, lj := strings.ToLower(v.notes[i].Name), strings.ToLower(v.notes[j].Name)
+		if li != lj {
+			return li < lj
+		}
+		return v.notes[i].Path < v.notes[j].Path
 	})
 
 	return nil

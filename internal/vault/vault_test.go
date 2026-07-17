@@ -51,13 +51,15 @@ func TestVault(t *testing.T) {
 		t.Errorf("Resolve(\"b\") = %q, want %q", path, filepath.Join(root, "sub", "b.md"))
 	}
 
-	// Test Resolve("B.md") - accepts .md extension
+	// Test Resolve("B.md") - accepts .md extension; case-insensitive
+	// tie-break is uniform, so this also resolves to the shortest path
+	// (sub/b.md), same as Resolve("b").
 	path, ok = v.Resolve("B.md")
 	if !ok {
 		t.Error("Resolve(\"B.md\") returned false, want true")
 	}
-	if path != filepath.Join(root, "sub", "deep", "B.md") {
-		t.Errorf("Resolve(\"B.md\") = %q, want %q", path, filepath.Join(root, "sub", "deep", "B.md"))
+	if path != filepath.Join(root, "sub", "b.md") {
+		t.Errorf("Resolve(\"B.md\") = %q, want %q", path, filepath.Join(root, "sub", "b.md"))
 	}
 
 	// Test Resolve("a") works too
@@ -92,6 +94,167 @@ func TestVault(t *testing.T) {
 	path, ok = v.Resolve("new")
 	if !ok {
 		t.Error("Resolve(\"new\") returned false after Rescan, want true")
+	}
+}
+
+// TestOpenAbsolutePath verifies that Open normalizes a relative root into an
+// absolute one, so every derived Note.Path (and Root()) is absolute.
+func TestOpenAbsolutePath(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "notes")
+	if err := os.MkdirAll(root, 0755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	createFile(t, root, "a.md", "content a")
+
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(origWD); err != nil {
+			t.Fatalf("Chdir back to %q failed: %v", origWD, err)
+		}
+	}()
+
+	if err := os.Chdir(parent); err != nil {
+		t.Fatalf("Chdir to %q failed: %v", parent, err)
+	}
+
+	v, err := Open("notes")
+	if err != nil {
+		t.Fatalf("Open(\"notes\") failed: %v", err)
+	}
+
+	if !filepath.IsAbs(v.Root()) {
+		t.Errorf("Root() = %q, want absolute path", v.Root())
+	}
+
+	list := v.List()
+	if len(list) != 1 {
+		t.Fatalf("List() returned %d notes, want 1", len(list))
+	}
+	if !filepath.IsAbs(list[0].Path) {
+		t.Errorf("Note.Path = %q, want absolute path", list[0].Path)
+	}
+}
+
+// TestResolveTieBreakShortestPath verifies that Resolve considers ALL
+// case-insensitive matches uniformly and picks the shortest path, even when
+// one of the matches is an exact-case match at a deeper (longer) path.
+func TestResolveTieBreakShortestPath(t *testing.T) {
+	root := t.TempDir()
+	createFile(t, root, "FOO.md", "content FOO")
+	createFile(t, root, "aaaaaaaaaa/foo.md", "content foo")
+
+	v, err := Open(root)
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+
+	path, ok := v.Resolve("foo")
+	if !ok {
+		t.Fatal("Resolve(\"foo\") returned false, want true")
+	}
+	want := filepath.Join(root, "FOO.md")
+	if path != want {
+		t.Errorf("Resolve(\"foo\") = %q, want %q (shortest path should win over exact-case match)", path, want)
+	}
+}
+
+// TestOpenHiddenRoot verifies that the dot-directory skip does not apply to
+// the root entry itself: a vault rooted at a dot-prefixed directory must
+// still be indexed normally.
+func TestOpenHiddenRoot(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, ".notes")
+	if err := os.MkdirAll(root, 0755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	createFile(t, root, "a.md", "content a")
+	createFile(t, root, "sub/b.md", "content b")
+
+	v, err := Open(root)
+	if err != nil {
+		t.Fatalf("Open(%q) failed: %v", root, err)
+	}
+
+	list := v.List()
+	if len(list) != 2 {
+		t.Fatalf("List() returned %d notes, want 2 (hidden root should still be indexed)", len(list))
+	}
+}
+
+// TestListDeterministicOrder verifies that List() orders case-insensitive
+// duplicate names deterministically (by path) rather than relying on an
+// unstable sort's incidental behavior, across a slice large enough to defeat
+// small-slice insertion-sort fallbacks.
+func TestListDeterministicOrder(t *testing.T) {
+	root := t.TempDir()
+
+	names := []string{"dup", "Dup", "DUP", "duP", "dUp", "dUP", "DUp", "DuP"}
+	var wantPaths []string
+	for i := 0; i < 20; i++ {
+		dir := filepath.Join(root, "d"+padded(i))
+		name := names[i%len(names)]
+		createFile(t, root, filepath.Join("d"+padded(i), name+".md"), "content")
+		wantPaths = append(wantPaths, filepath.Join(dir, name+".md"))
+	}
+
+	v, err := Open(root)
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+
+	// Run List() multiple times and verify the order is identical and
+	// matches the lexicographic path order every time.
+	for attempt := 0; attempt < 3; attempt++ {
+		list := v.List()
+		if len(list) != len(wantPaths) {
+			t.Fatalf("List() returned %d notes, want %d", len(list), len(wantPaths))
+		}
+		for i, note := range list {
+			if note.Path != wantPaths[i] {
+				t.Errorf("attempt %d: List()[%d].Path = %q, want %q", attempt, i, note.Path, wantPaths[i])
+			}
+		}
+	}
+}
+
+// padded zero-pads an int to 2 digits so directory names sort lexically in
+// numeric order (d00, d01, ..., d19).
+func padded(i int) string {
+	if i < 10 {
+		return "0" + string(rune('0'+i))
+	}
+	return string(rune('0'+i/10)) + string(rune('0'+i%10))
+}
+
+// TestResolveEqualLengthTieBreak verifies that when two case-insensitive
+// matches have equal-length paths, Resolve deterministically picks the
+// lexicographically smaller path.
+func TestResolveEqualLengthTieBreak(t *testing.T) {
+	root := t.TempDir()
+	createFile(t, root, "bb/tie.md", "content bb")
+	createFile(t, root, "aa/tie.md", "content aa")
+
+	v, err := Open(root)
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+
+	pathA := filepath.Join(root, "aa", "tie.md")
+	pathB := filepath.Join(root, "bb", "tie.md")
+	if len(pathA) != len(pathB) {
+		t.Fatalf("test setup invalid: paths must be equal length, got %d and %d", len(pathA), len(pathB))
+	}
+
+	path, ok := v.Resolve("tie")
+	if !ok {
+		t.Fatal("Resolve(\"tie\") returned false, want true")
+	}
+	if path != pathA {
+		t.Errorf("Resolve(\"tie\") = %q, want %q (lexicographically smaller path should win on equal-length tie)", path, pathA)
 	}
 }
 
