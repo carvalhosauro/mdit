@@ -12,11 +12,15 @@ import (
 )
 
 // WikiLink is an inline AST node representing an Obsidian-style wikilink,
-// either [[target]] or [[target|alias]].
+// either [[target]] or [[target|alias]]. Segment is the byte range of the
+// target text within the parsed source, so the renderer can slice it directly
+// out of Result.Source (it always aligns because goldmark parses the full
+// source).
 type WikiLink struct {
 	ast.BaseInline
-	Target string
-	Alias  string
+	Target  string
+	Alias   string
+	Segment text.Segment
 }
 
 // KindWikiLink is the NodeKind for WikiLink nodes.
@@ -54,7 +58,7 @@ func (p *wikiLinkParser) Trigger() []byte { return []byte{'['} }
 // "[[target]]" or "[[target|alias]]" span on the current line; otherwise it
 // returns nil so other parsers get a chance.
 func (p *wikiLinkParser) Parse(parent ast.Node, block text.Reader, pc parser.Context) ast.Node {
-	line, _ := block.PeekLine()
+	line, segment := block.PeekLine()
 	// Need at least "[[x]]".
 	if len(line) < 5 || line[0] != '[' || line[1] != '[' {
 		return nil
@@ -87,10 +91,16 @@ func (p *wikiLinkParser) Parse(parent ast.Node, block text.Reader, pc parser.Con
 	if len(target) == 0 {
 		return nil
 	}
+	// The target text starts after the leading "[[" (2 bytes) at this line's
+	// absolute offset in the parsed source, so the renderer can slice it out of
+	// Result.Source directly.
+	targetStart := segment.Start + 2
+	targetSeg := text.NewSegment(targetStart, targetStart+len(target))
 	block.Advance(close + 2)
 	return &WikiLink{
-		Target: string(target),
-		Alias:  string(alias),
+		Target:  string(target),
+		Alias:   string(alias),
+		Segment: targetSeg,
 	}
 }
 

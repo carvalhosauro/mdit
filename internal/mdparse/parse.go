@@ -59,6 +59,12 @@ var thematicBreakRe = regexp.MustCompile(`^ {0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*)
 // an info string on the opening fence.
 var fenceRe = regexp.MustCompile("^ {0,3}(`{3,}|~{3,})")
 
+// setextUnderlineRe matches a setext heading underline line: a run of '=' or two
+// or more '-', optionally indented up to three spaces and trailing whitespace.
+// goldmark folds the underline into the setext Heading node but exposes no line
+// segment for it, so it is reattached to the preceding Heading block manually.
+var setextUnderlineRe = regexp.MustCompile(`^ {0,3}(=+|-{2,})\s*$`)
+
 var (
 	mdOnce sync.Once
 	md     goldmark.Markdown
@@ -75,9 +81,13 @@ func Markdown() goldmark.Markdown {
 
 // Parse segments lines into contiguous blocks. The returned Blocks always cover
 // every line index in [0, len(lines)-1] with no gaps and no overlap — the
-// invariant the editor's virtualization depends on. Frontmatter is detected
-// manually before goldmark; goldmark parses only the remainder and all derived
-// ranges are offset accordingly.
+// invariant the editor's virtualization depends on.
+//
+// goldmark parses the FULL source, so every Block.Node's inline segments align
+// to Result.Source by construction (the render consumer slices those segments
+// straight out of Source). Frontmatter is detected separately (line 0 "---" with
+// a later "---" closing it) and the blocks goldmark produced within that line
+// range are collapsed into a single Frontmatter block (Node nil).
 func Parse(lines []string) Result {
 	source := []byte(strings.Join(lines, "\n"))
 	n := len(lines)
@@ -85,39 +95,48 @@ func Parse(lines []string) Result {
 		return Result{Source: source}
 	}
 
-	var blocks []Block
+	blocks := segmentLines(lines)
 
-	// Frontmatter: line 0 == "---" with a later "---" closing it.
-	startLine := 0
+	// Frontmatter: line 0 == "---" with a later "---" closing it. goldmark parses
+	// the frontmatter interior as ordinary markdown (thematic breaks, setext
+	// headings, etc.); those blocks are fully absorbed into one Frontmatter block.
 	if lines[0] == "---" {
 		for i := 1; i < n; i++ {
 			if lines[i] == "---" {
-				blocks = append(blocks, Block{Kind: Frontmatter, Start: 0, End: i})
-				startLine = i + 1
+				blocks = absorbFrontmatter(blocks, i)
 				break
 			}
 		}
 	}
 
-	remLines := lines[startLine:]
-	if len(remLines) > 0 {
-		gm := segmentRemainder(remLines)
-		for i := range gm {
-			gm[i].Start += startLine
-			gm[i].End += startLine
-		}
-		blocks = append(blocks, gm...)
-	}
-
 	return Result{Blocks: blocks, Source: source}
 }
 
-// segmentRemainder segments the post-frontmatter lines into blocks whose ranges
-// are relative to remLines[0].
-func segmentRemainder(remLines []string) []Block {
+// absorbFrontmatter replaces every block within the frontmatter line range
+// [0, k] with a single Frontmatter block (Node nil), preserving the coverage
+// invariant. A block that crosses the boundary (starts <= k but ends > k) has
+// its Start clamped to k+1 and is kept.
+func absorbFrontmatter(blocks []Block, k int) []Block {
+	out := []Block{{Kind: Frontmatter, Start: 0, End: k}}
+	for _, b := range blocks {
+		if b.End <= k {
+			continue // fully inside the frontmatter range
+		}
+		if b.Start <= k {
+			b.Start = k + 1 // crosses the boundary; clamp to just after frontmatter
+		}
+		out = append(out, b)
+	}
+	return out
+}
+
+// segmentLines segments the given lines into blocks whose ranges are relative to
+// lines[0]. It runs goldmark over the joined lines so every node segment offset
+// aligns with the joined bytes.
+func segmentLines(remLines []string) []Block {
 	n := len(remLines)
 
-	// Byte offset of the start of each line within the joined remainder.
+	// Byte offset of the start of each line within the joined source.
 	offsets := make([]int, n+1)
 	for i, l := range remLines {
 		offsets[i+1] = offsets[i] + len(l) + 1
@@ -208,13 +227,19 @@ func segmentRemainder(remLines []string) []Block {
 		}
 	}
 
-	// Pass C: fill any still-unclaimed line. Blank stays Blank; a stray thematic
-	// break line is labeled as such (node nil); everything else is Other.
+	// Pass C: fill any still-unclaimed line. A setext underline (=== or ---)
+	// immediately after a Heading line is folded back into that Heading block —
+	// goldmark exposes no line segment for the underline, so it lands here. Blank
+	// stays Blank; a stray thematic break line is labeled as such (node nil);
+	// everything else is Other.
 	for i := 0; i < n; i++ {
 		if claimed[i] {
 			continue
 		}
 		switch {
+		case i > 0 && kindOf[i-1] == Heading && setextUnderlineRe.MatchString(remLines[i]):
+			kindOf[i] = Heading
+			nodeOf[i] = nodeOf[i-1] // same node → coalesced into one Heading block
 		case strings.TrimSpace(remLines[i]) == "":
 			kindOf[i] = Blank
 		case thematicBreakRe.MatchString(remLines[i]):

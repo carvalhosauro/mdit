@@ -3,6 +3,8 @@ package mdparse
 import (
 	"strings"
 	"testing"
+
+	"github.com/yuin/goldmark/ast"
 )
 
 // assertCoverage is the central invariant check: the returned blocks must cover
@@ -63,7 +65,10 @@ func TestParseCoverageTableDriven(t *testing.T) {
 		{"blockquote", "> quote\n> line two"},
 		{"thematic break", "para\n\n---\n\nmore"},
 		{"frontmatter", "---\ntitle: hi\ntags: [a]\n---\n\n# Body"},
+		{"frontmatter interior parses as setext", "---\ntitle: hi\n---"},
 		{"frontmatter then list", "---\nk: v\n---\n- item"},
+		{"setext heading equals", "Title\n===\n\npara"},
+		{"setext heading dashes", "Title\n---\n\npara"},
 		{"everything", "---\nt: x\n---\n# H\n\ntext one\ntext two\n\n```\ncode\n```\n\n- l1\n  - l2\n\n> q\n\n---\n\n| a |\n|---|\n| 1 |"},
 		{"trailing blanks", "text\n\n\n"},
 		{"leading blanks", "\n\ntext"},
@@ -230,6 +235,134 @@ func TestParseFrontmatterNotClosed(t *testing.T) {
 	assertCoverage(t, res, len(ls))
 	if b := findBlock(res, 0); b != nil && b.Kind == Frontmatter {
 		t.Fatalf("unterminated --- must not be Frontmatter, got %+v", b)
+	}
+}
+
+// TestParseNodeSegmentsAlignWithSource is the C1 regression test: when a
+// document has frontmatter, goldmark must parse the FULL source so that every
+// Block.Node's inline segments index correctly into Result.Source. Before the
+// fix goldmark parsed only the frontmatter-stripped remainder, so segments were
+// shifted left by the frontmatter prefix length and slicing them out of Source
+// yielded silently wrong text.
+func TestParseNodeSegmentsAlignWithSource(t *testing.T) {
+	ls := lines("---\ntitle: hi\n---\n\nsee [[nota]] and **bold**")
+	res := Parse(ls)
+	assertCoverage(t, res, len(ls))
+
+	// The paragraph is the last line.
+	p := findBlock(res, 4)
+	if p == nil || p.Kind != Paragraph || p.Node == nil {
+		t.Fatalf("line 4 expected Paragraph with Node, got %+v", p)
+	}
+
+	var wl *WikiLink
+	var emphText string
+	err := ast.Walk(p.Node, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		switch n := node.(type) {
+		case *WikiLink:
+			wl = n
+		case *ast.Emphasis:
+			for c := n.FirstChild(); c != nil; c = c.NextSibling() {
+				if tn, ok := c.(*ast.Text); ok {
+					seg := tn.Segment
+					emphText = string(res.Source[seg.Start:seg.Stop])
+				}
+			}
+		}
+		return ast.WalkContinue, nil
+	})
+	if err != nil {
+		t.Fatalf("walk error: %v", err)
+	}
+
+	if wl == nil {
+		t.Fatalf("expected a WikiLink inline in the paragraph")
+	}
+	// Slice the wikilink target segment out of Source: must be exactly "nota".
+	got := string(res.Source[wl.Segment.Start:wl.Segment.Stop])
+	if got != "nota" {
+		t.Fatalf("WikiLink segment sliced from Source = %q, want %q", got, "nota")
+	}
+	if emphText != "bold" {
+		t.Fatalf("Emphasis text sliced from Source = %q, want %q", emphText, "bold")
+	}
+}
+
+// TestParseFrontmatterInteriorSetext guards the full-source-parsing trap: with
+// goldmark parsing the whole document, the frontmatter interior ("title: hi"
+// followed by "---") parses as a setext heading. The relabel step must absorb it
+// entirely into a single Frontmatter block.
+func TestParseFrontmatterInteriorSetext(t *testing.T) {
+	ls := lines("---\ntitle: hi\n---")
+	res := Parse(ls)
+	assertCoverage(t, res, len(ls))
+	if len(res.Blocks) != 1 {
+		t.Fatalf("expected exactly 1 block, got %d: %+v", len(res.Blocks), res.Blocks)
+	}
+	fm := res.Blocks[0]
+	if fm.Kind != Frontmatter || fm.Start != 0 || fm.End != 2 {
+		t.Fatalf("expected Frontmatter block [0,2], got %+v", fm)
+	}
+	if fm.Node != nil {
+		t.Fatalf("Frontmatter Node must be nil, got %v", fm.Node)
+	}
+}
+
+// TestParseSetextHeadingEquals is the I1 regression test for '=' underlines: the
+// text line plus its '===' underline must be ONE Heading block, not a heading
+// followed by an Other/ThematicBreak gap block.
+func TestParseSetextHeadingEquals(t *testing.T) {
+	ls := lines("Title\n===\n\npara")
+	res := Parse(ls)
+	assertCoverage(t, res, len(ls))
+
+	h := findBlock(res, 0)
+	if h == nil || h.Kind != Heading {
+		t.Fatalf("line 0 expected Heading, got %+v", h)
+	}
+	if h.Start != 0 || h.End != 1 {
+		t.Fatalf("setext heading should span [0,1], got [%d,%d]", h.Start, h.End)
+	}
+	// The underline line must belong to the SAME heading block.
+	if u := findBlock(res, 1); u == nil || u.Kind != Heading || u.Node != h.Node {
+		t.Fatalf("line 1 (===) must be part of the Heading block, got %+v", u)
+	}
+	count := 0
+	for _, b := range res.Blocks {
+		if b.Kind == Heading {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly 1 Heading block, got %d", count)
+	}
+}
+
+// TestParseSetextHeadingDashes is the I1 regression test for '-' underlines,
+// which are the dangerous case: '---' would otherwise be labeled ThematicBreak.
+func TestParseSetextHeadingDashes(t *testing.T) {
+	ls := lines("Title\n---\n\npara")
+	res := Parse(ls)
+	assertCoverage(t, res, len(ls))
+
+	h := findBlock(res, 0)
+	if h == nil || h.Kind != Heading {
+		t.Fatalf("line 0 expected Heading, got %+v", h)
+	}
+	if h.Start != 0 || h.End != 1 {
+		t.Fatalf("setext heading should span [0,1], got [%d,%d]", h.Start, h.End)
+	}
+	if u := findBlock(res, 1); u == nil || u.Kind != Heading {
+		t.Fatalf("line 1 (---) must be Heading, not %+v", u)
+	}
+	// Must not be classified as a ThematicBreak.
+	for _, b := range res.Blocks {
+		if b.Kind == ThematicBreak {
+			t.Fatalf("setext '---' underline must not be a ThematicBreak block: %+v", b)
+		}
 	}
 }
 
