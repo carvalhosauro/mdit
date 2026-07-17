@@ -45,15 +45,6 @@ func newFixture(t *testing.T) Model {
 	return m
 }
 
-func stripLines(s string) []string {
-	raw := strings.Split(s, "\n")
-	out := make([]string, len(raw))
-	for i, ln := range raw {
-		out[i] = ansi.Strip(ln)
-	}
-	return out
-}
-
 func joinStrip(lines []string) string {
 	var b strings.Builder
 	for _, ln := range lines {

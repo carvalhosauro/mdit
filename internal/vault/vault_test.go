@@ -91,7 +91,7 @@ func TestVault(t *testing.T) {
 	}
 
 	// Check that "new" can be resolved
-	path, ok = v.Resolve("new")
+	_, ok = v.Resolve("new")
 	if !ok {
 		t.Error("Resolve(\"new\") returned false after Rescan, want true")
 	}

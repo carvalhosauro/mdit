@@ -65,7 +65,12 @@ func styleInline(c ast.Node, source []byte, ctx Context) string {
 	case *east.TaskCheckBox:
 		return "" // rendered as a list marker, not inline text
 	case *ast.RawHTML:
-		return string(t.Text(source))
+		var b strings.Builder
+		for i := 0; i < t.Segments.Len(); i++ {
+			seg := t.Segments.At(i)
+			b.Write(seg.Value(source))
+		}
+		return b.String()
 	default:
 		return renderInlines(c, source, ctx)
 	}
@@ -114,9 +119,7 @@ func wrapStyled(s string, width int) []string {
 			out = append(out, ln)
 			continue
 		}
-		for _, hl := range strings.Split(wrap.String(ln, width), "\n") {
-			out = append(out, hl)
-		}
+		out = append(out, strings.Split(wrap.String(ln, width), "\n")...)
 	}
 	if len(out) == 0 {
 		return []string{""}
