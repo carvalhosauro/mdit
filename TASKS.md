@@ -25,7 +25,7 @@
 | 8 | Fuzzy finder (Ctrl+P, overlay bubbles/list) | ✅ feito | 704b569 |
 | 9 | Wikilinks: Ctrl+] segue, Ctrl+B volta (pilha), autocomplete popup em `[[`, broken em vermelho | ✅ feito | 704b569 |
 | 10 | Zen mode (Ctrl+E, read-only, centrado ≤80 cols, preserva cursor/scroll ao voltar) | ✅ feito | 704b569 |
-| 11 | Integração e2e (teatest), CI GitHub Actions (3 OS), .golangci.yml, README final | ✅ feito | (pendente) |
+| 11 | Integração e2e (teatest), CI GitHub Actions (3 OS), .golangci.yml, README final | ✅ feito | 9d1a7fe |
 
 ## Contratos entre pacotes (NÃO quebrar)
 
