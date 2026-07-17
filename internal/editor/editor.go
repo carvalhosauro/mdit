@@ -35,8 +35,9 @@ type Model struct {
 	width, height int
 
 	cursor  doc.Position
-	goalCol int // remembered target column for vertical (up/down) motion
-	scroll  int // top screen row of the viewport
+	goalCol int  // remembered target column for vertical (up/down) motion
+	scroll  int  // top screen row of the viewport
+	zen     bool // when true, all blocks are rendered (no raw cursor block)
 
 	// layout state, rebuilt by recompute.
 	result        mdparse.Result
@@ -95,6 +96,38 @@ func (m *Model) SetDoc(d *doc.Document) {
 	m.recompute()
 }
 
+// SetCursor moves the cursor to p (clamped on next recompute) and rebuilds layout.
+func (m *Model) SetCursor(p doc.Position) {
+	m.cursor = p
+	m.goalCol = p.Col
+	m.recompute()
+}
+
+// InsertText inserts s at the cursor and rebuilds layout.
+func (m *Model) InsertText(s string) {
+	m.cursor = m.doc.Insert(m.cursor, s)
+	m.goalCol = m.cursor.Col
+	m.recompute()
+}
+
+// SetZen toggles read-only fully-rendered mode (no raw cursor block).
+func (m *Model) SetZen(on bool) {
+	m.zen = on
+	m.recompute()
+}
+
+// Zen reports whether the editor is in zen (fully rendered) mode.
+func (m Model) Zen() bool { return m.zen }
+
+// Scroll returns the top screen row of the viewport.
+func (m Model) Scroll() int { return m.scroll }
+
+// SetScroll sets the viewport scroll offset (clamped).
+func (m *Model) SetScroll(s int) {
+	m.scroll = s
+	m.clampScroll()
+}
+
 // Update handles incoming messages (currently key and window-size messages) and
 // returns the updated model plus any command to run.
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
@@ -122,7 +155,7 @@ func (m Model) View() string {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		if sr == curRow {
+		if !m.zen && sr == curRow {
 			b.WriteString(m.renderCursorRow())
 			continue
 		}

@@ -90,7 +90,7 @@ func (m *Model) recompute() {
 	m.prefix = make([]int, len(m.blocks)+1)
 	for i := range m.blocks {
 		var lines []string
-		raw := i == m.cursorBlock
+		raw := !m.zen && i == m.cursorBlock
 		if raw {
 			lines = m.rawBlockLines(i)
 		} else {

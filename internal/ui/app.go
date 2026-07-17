@@ -1,12 +1,16 @@
 // Package ui is the root Bubble Tea application for mdit: it embeds the
-// editor widget, draws the status bar, and owns save/quit confirmation prompts.
+// editor widget, draws the status bar, and owns save/quit confirmation prompts,
+// the fuzzy finder, wikilink navigation, autocomplete, and zen mode.
 package ui
 
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 
+	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/carvalhosauro/mdit/internal/doc"
 	"github.com/carvalhosauro/mdit/internal/editor"
@@ -19,6 +23,9 @@ type mode int
 const (
 	modeEdit mode = iota
 	modePrompt
+	modeFinder
+	modeAutocomplete
+	modeZen
 )
 
 type promptKind int
@@ -29,6 +36,9 @@ const (
 	promptSaveConflict
 )
 
+// openNoteMsg requests opening a note path (after dirty prompts resolve).
+type openNoteMsg struct{ path string }
+
 // App is the root tea.Model. Construct with NewApp.
 type App struct {
 	vault  *vault.Vault
@@ -38,12 +48,22 @@ type App struct {
 	mode   mode
 	prompt promptKind
 	// afterPrompt runs after a successful save that was started for some
-	// larger intent (e.g. tea.Quit after quit→save, or open-note in Task 8).
-	// Cleared on cancel/reload.
+	// larger intent (e.g. tea.Quit after quit→save, or open-note).
 	afterPrompt tea.Cmd
 
 	width, height int
 	statusErr     string
+
+	history []string // navigation stack (paths); pushed on finder/follow open
+
+	finder list.Model
+
+	acItems  []string // autocomplete candidate names
+	acIndex  int
+	acActive bool
+
+	// zenSavedScroll is restored when leaving zen if needed.
+	zenSavedScroll int
 }
 
 // NewApp builds an App over the given vault and initial document.
@@ -56,12 +76,15 @@ func NewApp(v *vault.Vault, initial *doc.Document, th theme.Theme) *App {
 		return !ok
 	}
 	ed := editor.New(initial, th, isBroken)
-	return &App{
+	a := &App{
 		vault:  v,
 		theme:  th,
 		editor: ed,
 		mode:   modeEdit,
+		finder: newFinderList(nil, 40, 12),
 	}
+	a.refreshFinderItems()
+	return a
 }
 
 // Doc returns the document currently open in the editor.
@@ -78,15 +101,39 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		a.width, a.height = msg.Width, msg.Height
 		a.layoutEditor()
+		a.resizeFinder()
 		return a, nil
+
+	case openNoteMsg:
+		return a.doOpenNote(msg.path, true)
+
+	case editor.FollowLinkMsg:
+		return a.handleFollowLink(msg.Target)
+
+	case editor.AutocompleteMsg:
+		a.openAutocomplete()
+		return a, nil
+
 	case tea.KeyMsg:
-		if a.mode == modePrompt {
+		switch a.mode {
+		case modePrompt:
 			return a.handlePromptKey(msg)
+		case modeFinder:
+			return a.handleFinderKey(msg)
+		case modeAutocomplete:
+			return a.handleAutocompleteKey(msg)
+		case modeZen:
+			return a.handleZenKey(msg)
+		default:
+			return a.handleEditKey(msg)
 		}
-		return a.handleEditKey(msg)
-	case editor.FollowLinkMsg, editor.AutocompleteMsg:
-		// Handled in Tasks 8/9; ignore for now so typing [[ does not break.
-		return a, nil
+	}
+
+	// Forward async msgs (e.g. list.FilterMatchesMsg) to the active child.
+	if a.mode == modeFinder {
+		var cmd tea.Cmd
+		a.finder, cmd = a.finder.Update(msg)
+		return a, cmd
 	}
 
 	var cmd tea.Cmd
@@ -100,6 +147,13 @@ func (a *App) handleEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a.doSave()
 	case tea.KeyCtrlQ:
 		return a.doQuit()
+	case tea.KeyCtrlP:
+		a.openFinder()
+		return a, nil
+	case tea.KeyCtrlE:
+		return a.enterZen()
+	case tea.KeyCtrlB:
+		return a.goBack()
 	}
 
 	var cmd tea.Cmd
@@ -142,8 +196,7 @@ func (a *App) clearPrompt() {
 	a.afterPrompt = nil
 }
 
-// finishPrompt leaves prompt mode and runs afterPrompt if set (e.g. quit
-// after a successful save-from-quit flow).
+// finishPrompt leaves prompt mode and runs afterPrompt if set.
 func (a *App) finishPrompt() (tea.Model, tea.Cmd) {
 	cmd := a.afterPrompt
 	a.mode = modeEdit
@@ -161,7 +214,6 @@ func (a *App) handlePromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			err := a.editor.Doc().Save()
 			if err != nil {
 				if errors.Is(err, doc.ErrExternalChange) {
-					// Keep afterPrompt (tea.Quit) so overwrite can still quit.
 					a.prompt = promptSaveConflict
 					return a, nil
 				}
@@ -171,7 +223,11 @@ func (a *App) handlePromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return a.finishPrompt()
 		case 'd':
-			a.afterPrompt = nil
+			cmd := a.afterPrompt
+			a.clearPrompt()
+			if cmd != nil {
+				return a, cmd
+			}
 			return a, tea.Quit
 		case 'c':
 			a.clearPrompt()
@@ -195,7 +251,6 @@ func (a *App) handlePromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				a.editor.SetDoc(d)
 				a.layoutEditor()
 			}
-			// Reload abandons the pending intent (quit / open-other).
 			a.clearPrompt()
 			return a, nil
 		case 'c':
@@ -221,6 +276,10 @@ func promptChar(msg tea.KeyMsg) rune {
 }
 
 func (a *App) layoutEditor() {
+	if a.mode == modeZen {
+		a.layoutZenEditor()
+		return
+	}
 	h := a.height - 1
 	if h < 1 {
 		h = 1
@@ -234,6 +293,15 @@ func (a *App) layoutEditor() {
 
 // View implements tea.Model.
 func (a *App) View() string {
+	switch a.mode {
+	case modeFinder:
+		return a.viewFinder()
+	case modeZen:
+		return a.viewZen()
+	case modeAutocomplete:
+		return a.viewAutocomplete()
+	}
+
 	ed := a.editor.View()
 	bar := a.renderBottom()
 	if ed == "" {
@@ -255,4 +323,104 @@ func (a *App) fileName() string {
 		return "untitled.md"
 	}
 	return filepath.Base(p)
+}
+
+// requestOpen opens path, prompting if the current doc is dirty.
+func (a *App) requestOpen(path string) (tea.Model, tea.Cmd) {
+	if a.editor.Doc().Dirty() {
+		p := path
+		a.enterPrompt(promptQuitDirty, func() tea.Msg { return openNoteMsg{path: p} })
+		return a, nil
+	}
+	return a.doOpenNote(path, true)
+}
+
+// doOpenNote loads path into the editor. If pushHistory is true and the current
+// path differs, the current path is pushed onto the navigation stack.
+func (a *App) doOpenNote(path string, pushHistory bool) (tea.Model, tea.Cmd) {
+	cur := a.editor.Doc().Path()
+	if pushHistory && cur != "" && cur != path {
+		a.history = append(a.history, cur)
+	}
+	d, err := doc.Load(path)
+	if err != nil {
+		a.statusErr = err.Error()
+		a.mode = modeEdit
+		return a, nil
+	}
+	a.editor.SetDoc(d)
+	a.statusErr = ""
+	a.mode = modeEdit
+	a.prompt = promptNone
+	a.afterPrompt = nil
+	a.acActive = false
+	a.layoutEditor()
+	return a, nil
+}
+
+func (a *App) goBack() (tea.Model, tea.Cmd) {
+	if len(a.history) == 0 {
+		return a, nil
+	}
+	path := a.history[len(a.history)-1]
+	a.history = a.history[:len(a.history)-1]
+	return a.doOpenNote(path, false)
+}
+
+func (a *App) handleFollowLink(target string) (tea.Model, tea.Cmd) {
+	if a.vault == nil {
+		a.statusErr = "broken link: " + target
+		return a, nil
+	}
+	path, ok := a.vault.Resolve(target)
+	if !ok {
+		a.statusErr = "broken link: " + target
+		return a, nil
+	}
+	a.statusErr = ""
+	return a.requestOpen(path)
+}
+
+// centerBlock wraps content in a full-terminal frame, centering horizontally
+// and vertically when smaller than the terminal.
+func centerBlock(content string, termW, termH int) string {
+	lines := strings.Split(content, "\n")
+	contentH := len(lines)
+	contentW := 0
+	for _, ln := range lines {
+		if w := lipgloss.Width(ln); w > contentW {
+			contentW = w
+		}
+	}
+	padX := (termW - contentW) / 2
+	if padX < 0 {
+		padX = 0
+	}
+	padY := (termH - contentH) / 2
+	if padY < 0 {
+		padY = 0
+	}
+	var b strings.Builder
+	for i := 0; i < padY; i++ {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(strings.Repeat(" ", termW))
+	}
+	for i, ln := range lines {
+		if padY > 0 || i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(strings.Repeat(" ", padX))
+		b.WriteString(ln)
+		right := termW - padX - lipgloss.Width(ln)
+		if right > 0 {
+			b.WriteString(strings.Repeat(" ", right))
+		}
+	}
+	for i := padY + contentH; i < termH; i++ {
+		b.WriteByte('\n')
+		b.WriteString(strings.Repeat(" ", termW))
+	}
+	return b.String()
 }

@@ -12,6 +12,9 @@ import (
 // handleKey dispatches a key message, mutating the model and returning it along
 // with any command (follow-link or autocomplete) the key produced.
 func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+	if m.zen {
+		return m.handleZenKey(msg)
+	}
 	switch msg.Type {
 	case tea.KeyRunes:
 		return m.insertAndMaybeAutocomplete(string(msg.Runes))
@@ -79,6 +82,34 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, nil // ignored; higher layers (Task 7) handle the rest
 	}
 
+	m.recompute()
+	return m, nil
+}
+
+// handleZenKey allows only navigation/scroll in zen mode; editing is ignored.
+func (m Model) handleZenKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyUp:
+		m.moveVertical(-1)
+	case tea.KeyDown:
+		m.moveVertical(1)
+	case tea.KeyPgUp:
+		m.movePage(-1)
+	case tea.KeyPgDown:
+		m.movePage(1)
+	case tea.KeyHome:
+		m.cursor = doc.Position{}
+		m.goalCol = 0
+	case tea.KeyEnd:
+		last := m.doc.LineCount() - 1
+		if last < 0 {
+			last = 0
+		}
+		m.cursor = doc.Position{Line: last, Col: runeLen(m.doc.Line(last))}
+		m.goalCol = m.cursor.Col
+	default:
+		return m, nil
+	}
 	m.recompute()
 	return m, nil
 }
