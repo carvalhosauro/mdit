@@ -1,0 +1,21 @@
+# Git hooks managed by lefthook. Install with `make hooks` (or `lefthook install`).
+# Skip in a pinch with `LEFTHOOK=0 git commit` — CI still enforces everything.
+
+pre-commit:
+  parallel: true
+  commands:
+    fmt:
+      glob: "*.go"
+      run: gofmt -l -w {staged_files}
+      stage_fixed: true
+    vet:
+      glob: "*.go"
+      run: go vet ./...
+    lint:
+      glob: "*.go"
+      run: golangci-lint run
+
+pre-push:
+  commands:
+    test:
+      run: go test ./...
