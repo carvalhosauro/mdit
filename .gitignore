@@ -1,3 +1,5 @@
 /mdit
+/bin/
 dist/
+coverage.out
 *.mdit-recover
