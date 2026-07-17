@@ -1,14 +1,30 @@
 name: release
 
+# Runs when a rollout PR lands on `main` (push), or manually (workflow_dispatch).
+# Computes the next version from conventional commits, tags it, and cuts a
+# GitHub Release via GoReleaser. Notes come from git-cliff (no CHANGELOG file).
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. v0.1.0. Blank = auto-compute."
+        required: false
 
 permissions:
   contents: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  goreleaser:
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,9 +33,60 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26.x"
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+
+      - name: Resolve version
+        id: v
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          LAST=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "${INPUT_VERSION:-}" ]; then
+            NEXT="$INPUT_VERSION"
+          else
+            NEXT="v$(git cliff --bumped-version 2>/dev/null | sed 's/^v//')"
+          fi
+          echo "last=$LAST next=$NEXT"
+          # Bootstrap safety: no baseline tag and no explicit input -> do NOT
+          # auto-cut a first release. Cut it once via 'Run workflow'.
+          if [ -z "$LAST" ] && [ -z "${INPUT_VERSION:-}" ]; then
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            echo "No baseline tag. Cut the first release via workflow_dispatch."
+            exit 0
+          fi
+          if [ "$NEXT" = "$LAST" ]; then
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            echo "No version bump since $LAST — nothing to release."
+            exit 0
+          fi
+          if git rev-parse -q --verify "refs/tags/$NEXT" >/dev/null; then
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            echo "$NEXT already tagged — skipping."
+            exit 0
+          fi
+          echo "go=true" >> "$GITHUB_OUTPUT"
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+
+      - name: Tag + release notes
+        if: steps.v.outputs.go == 'true'
+        env:
+          NEXT: ${{ steps.v.outputs.next }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$NEXT" -m "$NEXT"
+          git push origin "$NEXT"
+          git cliff --latest --strip all > notes.md
+
+      - name: GoReleaser
+        if: steps.v.outputs.go == 'true'
+        uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: release --clean
+          args: release --clean --release-notes notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

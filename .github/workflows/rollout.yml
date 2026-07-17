@@ -1,0 +1,69 @@
+name: rollout
+
+# On every push to `stable`, open or refresh the rollout PR `stable -> main`.
+# Merging that PR triggers release.yml on main (tag + GitHub Release).
+on:
+  push:
+    branches: [stable]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: rollout
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  rollout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+
+      - name: Compute next version + notes
+        id: rel
+        run: |
+          set -euo pipefail
+          LAST=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          NEXT="v$(git cliff --bumped-version 2>/dev/null | sed 's/^v//')"
+          echo "last=$LAST next=$NEXT"
+          if [ -n "$LAST" ] && [ "$NEXT" = "$LAST" ]; then
+            echo "releasable=false" >> "$GITHUB_OUTPUT"
+            echo "No releasable commits since $LAST — no rollout PR."
+            exit 0
+          fi
+          echo "releasable=true" >> "$GITHUB_OUTPUT"
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Rollout $NEXT"
+            echo
+            echo "Merging \`stable\` into \`main\` tags **$NEXT** and cuts the release."
+            echo
+            git cliff --unreleased --strip all
+          } > rollout-body.md
+
+      - name: Create or update rollout PR
+        if: steps.rel.outputs.releasable == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT: ${{ steps.rel.outputs.next }}
+        run: |
+          set -euo pipefail
+          TITLE="chore(release): $NEXT"
+          existing=$(gh pr list --base main --head stable --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --title "$TITLE" --body-file rollout-body.md
+            echo "updated rollout PR #$existing"
+          else
+            gh pr create --base main --head stable --title "$TITLE" --body-file rollout-body.md
+            echo "created rollout PR"
+          fi
