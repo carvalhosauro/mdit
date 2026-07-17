@@ -19,8 +19,8 @@
 | 2 | `internal/doc` — buffer de linhas, Insert/DeleteRange rune-aware, undo/redo coalescido (500ms, clock injetável), Save com ErrExternalChange (mtime) | ✅ feito + review | c6ecd22 |
 | 3 | `internal/vault` — índice nome→path, Resolve case-insensitive (empate: path mais curto, depois lexicográfico), List estável, paths absolutos, root oculto ok | ✅ feito + review | 839e0a6, e4eb8f7 |
 | 4 | `internal/mdparse` — goldmark+GFM → `[]Block` cobrindo TODAS as linhas (invariante), extensão wikilink `[[t]]`/`[[t\|alias]]`, `WikiLinkAt`, frontmatter, setext | ✅ feito + review | 53af578, 65a8ef6 |
-| 5 | `internal/theme` + `internal/render` — bloco → linhas estilizadas ≤ Width, chroma, wrap ANSI-safe, wikilink broken style | ✅ implementado; ⏳ review pendente | 084878e |
-| 6 | `internal/editor` — widget virtualizado (prefix sums), bloco-sob-cursor cru, teclas de edição, undo | ⬜ | — |
+| 5 | `internal/theme` + `internal/render` — bloco → linhas estilizadas ≤ Width, chroma, wrap ANSI-safe, wikilink broken style | ✅ feito + review | 084878e |
+| 6 | `internal/editor` — widget virtualizado (prefix sums), bloco-sob-cursor cru, teclas de edição, undo | ✅ implementado; ⏳ review pendente | e2254d4 |
 | 7 | `internal/ui` + `cmd/mdit` — app rodável, statusbar, prompts (dirty/conflito), panic recover → `.mdit-recover` | ⬜ | — |
 | 8 | Fuzzy finder (Ctrl+P, overlay bubbles/list) | ⬜ | — |
 | 9 | Wikilinks: Ctrl+] segue, Ctrl+B volta (pilha), autocomplete popup em `[[`, broken em vermelho | ⬜ | — |
@@ -37,18 +37,13 @@
 
 ## Tasks restantes — o que fazer + critérios de aceite
 
-### Task 5 — REVIEW pendente
-Implementação commitada (084878e). Falta: code review (spec compliance + qualidade) e correções se houver Critical/Important. Aceite: review aprovado; invariantes de largura/altura testados.
-
-### Task 6 — `internal/editor` (núcleo do produto)
-**Como:** `Model` com doc + `mdparse.Result` (reparse quando `doc.Version()` muda) + cache de render por (hash do texto do bloco, width) + prefix sums de alturas → visível por busca binária. Bloco contendo cursor renderiza CRU (todas as suas linhas, estilo RawBlock, soft-wrap). `View()` materializa só blocos que intersectam a janela. Cursor de tela: prefix sum + linhas wrapped dentro do bloco cru (runewidth por rune). Teclas: runas, enter, backspace/delete, setas, ctrl+←/→, home/end, pgup/pgdn, ctrl+z/y. Emite `FollowLinkMsg{Target}` (Ctrl+]) e `AutocompleteMsg{Query}` (ao digitar `[[`).
-**Aceite:**
+### Task 6 — REVIEW pendente
+Implementação commitada (e2254d4), suite verde. Falta: code review (spec + qualidade) e fixes se houver Critical/Important. Aceite da implementação (já coberto por testes, reviewer confere):
 - Cursor em QUALQUER linha de tabela/fence → bloco INTEIRO cru; sai → renderizado de novo.
-- Doc de 100+ blocos: `View()` retorna exatamente `height` linhas; blocos fora da janela nunca são renderizados (virtualização real — cache miss count testável ou instrumentação simples).
-- Scroll segue cursor (nunca sai da janela); prefix sums = soma das alturas.
+- Doc de 100+ blocos: `View()` retorna exatamente `height` linhas; blocos fora da janela não são renderizados.
+- Scroll segue cursor; prefix sums = soma das alturas; goal-column nas setas; CJK width 2 no wrap do bloco cru.
 - Digitar reflete na View; undo restaura View + cursor.
-- Testes de mapping pesados (maior risco do projeto): setas cruzando bloco wrapped, backspace unindo linhas, edição em bloco multi-linha.
-- Commit: `feat(editor): virtualized inline-render editor widget`.
+- API produzida (contrato p/ Tasks 7-10): `editor.New(d *doc.Document, th theme.Theme, isBroken func(string) bool) Model`; `Update(tea.Msg) (Model, tea.Cmd)`; `View() string` (exatamente height linhas); `SetSize(w, h int)`; `Cursor() doc.Position`; `Doc() *doc.Document`; `SetDoc(*doc.Document)`; msgs `editor.FollowLinkMsg{Target string}` (Ctrl+]) e `editor.AutocompleteMsg{Query string}` (ao digitar `[[`).
 
 ### Task 7 — `internal/ui` + `cmd/mdit`
 **Como:** `App` tea.Model raiz (bubbletea v1, WithAltScreen): modos edit|prompt; statusbar (arquivo, dirty `[+]`, linha:col, hints); Ctrl+S (ErrExternalChange → prompt [o]verwrite/[r]eload/[c]ancel); Ctrl+Q (dirty → [s]ave/[d]iscard/[c]ancel); main.go: arg arquivo→vault=dir do arquivo; dir→vault=dir; panic guard: defer recover → grava `<path>.mdit-recover` + restaura terminal.
