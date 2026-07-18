@@ -80,13 +80,15 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "$NEXT" -m "$NEXT"
           git push origin "$NEXT"
-          git cliff --latest --strip all > notes.md
+          # Write notes OUTSIDE the repo — an untracked file in the tree makes
+          # GoReleaser abort with "git is in a dirty state".
+          git cliff --latest --strip all > "$RUNNER_TEMP/notes.md"
 
       - name: GoReleaser
         if: steps.v.outputs.go == 'true'
         uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: release --clean --release-notes notes.md
+          args: release --clean --release-notes ${{ runner.temp }}/notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
