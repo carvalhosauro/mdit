@@ -70,7 +70,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.goalCol = pos.Col
 		}
 
-	case tea.KeyCtrlCloseBracket:
+	case tea.KeyCtrlCloseBracket, tea.KeyCtrlO:
+		// Ctrl+] is the canonical binding, but many terminals swallow it
+		// (telnet escape / WSL). Ctrl+O ("open") is the portable alias.
 		if target, ok := mdparse.WikiLinkAt(m.doc.Line(m.cursor.Line), m.cursor.Col); ok {
 			t := target
 			m.recompute()

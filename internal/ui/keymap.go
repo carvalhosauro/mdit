@@ -25,7 +25,7 @@ var bindings = []keyBinding{
 	{types: []tea.KeyType{tea.KeyCtrlP}, hint: "^P", desc: "find note", barLabel: "notes", run: (*App).cmdOpenFinder},
 	{types: []tea.KeyType{tea.KeyCtrlE}, hint: "^E", desc: "zen mode", barLabel: "zen", run: (*App).enterZen},
 	{types: []tea.KeyType{tea.KeyCtrlB}, hint: "^B", desc: "back to previous note", run: (*App).goBack},
-	{types: []tea.KeyType{tea.KeyCtrlCloseBracket}, hint: "^]", desc: "follow wikilink under cursor"},
+	{types: []tea.KeyType{tea.KeyCtrlCloseBracket, tea.KeyCtrlO}, hint: "^] / ^O", desc: "follow wikilink under cursor"},
 	{hint: "[[", desc: "wikilink autocomplete"},
 	{hint: "^Z / ^Y", desc: "undo / redo"},
 	{types: []tea.KeyType{tea.KeyCtrlG}, hint: "^G", desc: "this help", barLabel: "help", run: (*App).cmdHelp},
