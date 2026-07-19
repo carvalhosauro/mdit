@@ -152,8 +152,10 @@ func fromPalette(p palette) Theme {
 
 		StatusBarName:  bar.Bold(true),
 		StatusBarDirty: base.Foreground(p.peach).Background(p.surface),
-		StatusBarHint:  base.Foreground(p.overlay).Background(p.surface),
-		StatusBarOK:    base.Foreground(p.green).Background(p.surface),
+		// Hints / word count / cursor use subtext (not overlay): overlay on
+		// surface is near-invisible on many terminals and made the bar unreadable.
+		StatusBarHint: base.Foreground(p.subtext).Background(p.surface),
+		StatusBarOK:   base.Foreground(p.green).Background(p.surface),
 
 		PromptBar: base.Foreground(p.base).Background(p.peach),
 		PromptKey: base.Foreground(p.base).Background(p.peach).Bold(true).Underline(true),
