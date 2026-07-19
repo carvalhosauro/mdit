@@ -117,7 +117,7 @@ func (a *App) renderZenBar() string {
 	case a.statusMsg != "":
 		return a.theme.StatusBarOK.Render(" " + a.statusMsg + " ")
 	case a.zenBarVisible:
-		return a.theme.Dim.Render("zen · ^E back")
+		return a.theme.Dim.Render("zen · ^P notes · ^E back")
 	}
 	return ""
 }
