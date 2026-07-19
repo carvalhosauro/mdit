@@ -184,10 +184,9 @@ func codeSpanRanges(line string) [][2]int {
 				break
 			}
 		}
-		if j >= n {
-			// No matching closer: the opening run is literal; resume just past it
-			// (i already points there) so later runs can still open a span.
-		}
+		// No matching closer: the opening run is literal. i already points
+		// just past it, so the outer loop resumes and later runs can still
+		// open a span.
 	}
 	return ranges
 }

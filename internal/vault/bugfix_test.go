@@ -3,6 +3,7 @@ package vault
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -11,6 +12,11 @@ import (
 // the unreadable subtree, still index everything readable, and record a
 // warning about what was skipped.
 func TestOpenSkipsUnreadableSubdir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Windows ACLs ignore Unix mode bits from os.Chmod, so a 0000
+		// directory remains readable and this probe cannot be set up.
+		t.Skip("unix permission bits are not enforced on Windows")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root; permission bits are not enforced")
 	}
