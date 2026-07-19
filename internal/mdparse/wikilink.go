@@ -1,6 +1,7 @@
 package mdparse
 
 import (
+	"bytes"
 	"regexp"
 	"unicode/utf8"
 
@@ -64,27 +65,27 @@ func (p *wikiLinkParser) Parse(parent ast.Node, block text.Reader, pc parser.Con
 		return nil
 	}
 	// Find the closing "]]" without allowing nested brackets in between.
-	close := -1
+	closeIdx := -1
 	for i := 2; i+1 < len(line); i++ {
 		c := line[i]
 		if c == ']' && line[i+1] == ']' {
-			close = i
+			closeIdx = i
 			break
 		}
 		if c == '[' || c == ']' {
 			return nil
 		}
 	}
-	if close < 0 {
+	if closeIdx < 0 {
 		return nil
 	}
-	content := line[2:close]
+	content := line[2:closeIdx]
 	if len(content) == 0 {
 		return nil
 	}
 	target := content
 	var alias []byte
-	if pipe := indexByte(content, '|'); pipe >= 0 {
+	if pipe := bytes.IndexByte(content, '|'); pipe >= 0 {
 		target = content[:pipe]
 		alias = content[pipe+1:]
 	}
@@ -96,21 +97,12 @@ func (p *wikiLinkParser) Parse(parent ast.Node, block text.Reader, pc parser.Con
 	// Result.Source directly.
 	targetStart := segment.Start + 2
 	targetSeg := text.NewSegment(targetStart, targetStart+len(target))
-	block.Advance(close + 2)
+	block.Advance(closeIdx + 2)
 	return &WikiLink{
 		Target:  string(target),
 		Alias:   string(alias),
 		Segment: targetSeg,
 	}
-}
-
-func indexByte(b []byte, c byte) int {
-	for i := 0; i < len(b); i++ {
-		if b[i] == c {
-			return i
-		}
-	}
-	return -1
 }
 
 // wikiLinkExtender registers the wikilink inline parser.
@@ -138,7 +130,13 @@ var wikiLinkRe = regexp.MustCompile(`\[\[([^\[\]|]+)(?:\|[^\[\]]*)?\]\]`)
 // col is measured in runes. It is regex-based and independent of the AST, so it
 // works directly on the raw text under the editor cursor.
 func WikiLinkAt(line string, col int) (target string, ok bool) {
+	codeSpans := codeSpanRanges(line)
 	for _, m := range wikiLinkRe.FindAllStringSubmatchIndex(line, -1) {
+		// A [[...]] rendered inside an inline code span is code, not a link, so
+		// the AST parser never yields a WikiLink there — skip it here too.
+		if overlapsAny(m[0], m[1], codeSpans) {
+			continue
+		}
 		// m[0]/m[1] are byte offsets of the whole match; convert to rune cols.
 		startRune := utf8.RuneCountInString(line[:m[0]])
 		endRune := utf8.RuneCountInString(line[:m[1]])
@@ -148,4 +146,58 @@ func WikiLinkAt(line string, col int) (target string, ok bool) {
 		}
 	}
 	return "", false
+}
+
+// codeSpanRanges returns the byte ranges [start, end) covered by inline code
+// spans in line, following the CommonMark backtick rule: a run of N backticks
+// opens a span and the next run of exactly N backticks closes it; an opening run
+// with no matching closer is literal text. Each returned range spans from the
+// opening backtick run through the closing one (delimiters included).
+func codeSpanRanges(line string) [][2]int {
+	var ranges [][2]int
+	n := len(line)
+	i := 0
+	for i < n {
+		if line[i] != '`' {
+			i++
+			continue
+		}
+		open := i
+		for i < n && line[i] == '`' {
+			i++
+		}
+		runLen := i - open
+		// Find a closing run of exactly runLen backticks.
+		j := i
+		for j < n {
+			if line[j] != '`' {
+				j++
+				continue
+			}
+			closeStart := j
+			for j < n && line[j] == '`' {
+				j++
+			}
+			if j-closeStart == runLen {
+				ranges = append(ranges, [2]int{open, j})
+				i = j
+				break
+			}
+		}
+		if j >= n {
+			// No matching closer: the opening run is literal; resume just past it
+			// (i already points there) so later runs can still open a span.
+		}
+	}
+	return ranges
+}
+
+// overlapsAny reports whether the byte range [start, end) overlaps any range.
+func overlapsAny(start, end int, ranges [][2]int) bool {
+	for _, r := range ranges {
+		if start < r[1] && end > r[0] {
+			return true
+		}
+	}
+	return false
 }
