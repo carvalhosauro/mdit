@@ -54,16 +54,16 @@ func TestWikilink_FollowBackBrokenAutocomplete(t *testing.T) {
 
 func TestMarkdownLink_FollowVaultTarget(t *testing.T) {
 	root, v := setupVault(t, map[string]string{
-		"a.md": "see [other](b) please\n",
+		"a.md": "[other](b)\n",
 		"b.md": "# B Note\n\n",
 	})
 	app := newApp(t, v, filepath.Join(root, "a.md"))
 	tm := teatest.NewTestModel(t, app, teatest.WithInitialTermSize(80, 24))
 	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
-		return bytes.Contains(bts, []byte("[other](b)"))
+		return strings.Contains(ansi.Strip(string(bts)), "a.md")
 	}, teatest.WithDuration(2*time.Second))
 
-	// Cursor starts on [other](b); Ctrl+O follows the markdown dest into b.md.
+	// Cursor at 0,0 is already on [other](b); Ctrl+O follows dest into b.md.
 	tm.Send(tea.KeyMsg{Type: tea.KeyCtrlO})
 	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
 		return strings.Contains(ansi.Strip(string(bts)), "b.md")
@@ -74,12 +74,12 @@ func TestMarkdownLink_FollowVaultTarget(t *testing.T) {
 
 func TestMarkdownLink_ExternalURLFlashes(t *testing.T) {
 	root, v := setupVault(t, map[string]string{
-		"a.md": "go [web](https://example.com)\n",
+		"a.md": "[web](https://example.com)\n",
 	})
 	app := newApp(t, v, filepath.Join(root, "a.md"))
 	tm := teatest.NewTestModel(t, app, teatest.WithInitialTermSize(80, 24))
 	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
-		return bytes.Contains(bts, []byte("https://example.com")) || bytes.Contains(bts, []byte("[web]"))
+		return strings.Contains(ansi.Strip(string(bts)), "a.md")
 	}, teatest.WithDuration(2*time.Second))
 
 	tm.Send(tea.KeyMsg{Type: tea.KeyCtrlO})
