@@ -208,6 +208,19 @@ func TestKeys_FollowLinkCtrlOAlias(t *testing.T) {
 	}
 }
 
+func TestKeys_FollowMarkdownLinkEmitsCmd(t *testing.T) {
+	m := newEditor(t, "see [docs](Other) here", 40, 6)
+	m.cursorTo(doc.Position{Line: 0, Col: 5}) // inside [docs]
+	_, cmd := key(m, tea.KeyMsg{Type: tea.KeyCtrlO})
+	if cmd == nil {
+		t.Fatal("ctrl+o over [label](dest) should emit a cmd")
+	}
+	fl, ok := cmd().(FollowLinkMsg)
+	if !ok || fl.Target != "Other" {
+		t.Fatalf("got %#v, want FollowLinkMsg{Target: Other}", cmd())
+	}
+}
+
 func TestKeys_FollowLinkNoLinkNoCmd(t *testing.T) {
 	m := newEditor(t, "no link here", 40, 6)
 	m.cursorTo(doc.Position{Line: 0, Col: 2})

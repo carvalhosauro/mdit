@@ -438,18 +438,94 @@ func (a *App) goBack() (tea.Model, tea.Cmd) {
 }
 
 func (a *App) handleFollowLink(target string) (tea.Model, tea.Cmd) {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return a, nil
+	}
+	// External URLs stay in the terminal: show the destination, don't shell out.
+	if isExternalURL(target) {
+		return a, a.flashOK(target)
+	}
 	if a.vault == nil {
 		return a, a.flashErr("broken link: " + target)
 	}
-	path, ok := a.vault.Resolve(target)
-	if !ok {
-		// P4: a broken link is an offer to create the note, not a dead end.
-		a.pendingTarget = target
+	if path, ok := a.resolveVaultTarget(target); ok {
+		a.statusErr = ""
+		return a.requestOpen(path)
+	}
+	// Offer create only for simple note names ([[nota]] / [x](nota)), not paths.
+	if isSimpleNoteName(target) {
+		a.pendingTarget = stripNoteExt(target)
 		a.enterPrompt(promptCreateNote, nil)
 		return a, nil
 	}
-	a.statusErr = ""
-	return a.requestOpen(path)
+	return a, a.flashErr("broken link: " + target)
+}
+
+func stripNoteExt(s string) string {
+	lower := strings.ToLower(s)
+	for _, ext := range []string{".markdown", ".md"} {
+		if strings.HasSuffix(lower, ext) {
+			return s[:len(s)-len(ext)]
+		}
+	}
+	return s
+}
+
+func isExternalURL(s string) bool {
+	lower := strings.ToLower(s)
+	return strings.HasPrefix(lower, "http://") ||
+		strings.HasPrefix(lower, "https://") ||
+		strings.HasPrefix(lower, "mailto:")
+}
+
+func isSimpleNoteName(s string) bool {
+	if s == "" || strings.Contains(s, "://") {
+		return false
+	}
+	return !strings.ContainsAny(s, `/\`)
+}
+
+// resolveVaultTarget maps a follow target to an absolute note path inside the
+// vault: name resolution first (wikilink-style), then a path relative to the
+// current note's directory or the vault root.
+func (a *App) resolveVaultTarget(target string) (string, bool) {
+	if path, ok := a.vault.Resolve(target); ok {
+		return path, true
+	}
+	var candidates []string
+	if cur := a.editor.Doc().Path(); cur != "" {
+		candidates = append(candidates, filepath.Join(filepath.Dir(cur), target))
+	}
+	candidates = append(candidates, filepath.Join(a.vault.Root(), target))
+	for _, c := range candidates {
+		if path, ok := a.vaultFileIfInside(c); ok {
+			return path, true
+		}
+		// Bare path without extension → try .md
+		if filepath.Ext(c) == "" {
+			if path, ok := a.vaultFileIfInside(c + ".md"); ok {
+				return path, true
+			}
+		}
+	}
+	return "", false
+}
+
+func (a *App) vaultFileIfInside(path string) (string, bool) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", false
+	}
+	rel, err := filepath.Rel(a.vault.Root(), abs)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	st, err := os.Stat(abs)
+	if err != nil || st.IsDir() {
+		return "", false
+	}
+	return abs, true
 }
 
 // doCreateNote creates <target>.md in the current note's directory (or the vault

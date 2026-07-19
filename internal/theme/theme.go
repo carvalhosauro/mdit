@@ -127,8 +127,10 @@ func fromPalette(p palette) Theme {
 		CodeBlock:       base.Foreground(p.text),
 		CodeBlockBorder: base.Foreground(p.surface2),
 
-		Link:       base.Underline(true).Foreground(p.blue),
-		WikiLink:   base.Underline(true).Foreground(p.sky),
+		Link: base.Underline(true).Foreground(p.blue),
+		// WikiLinks are bold sky (no underline) so they read as vault-internal,
+		// distinct from blue-underlined markdown [text](url) links.
+		WikiLink:   base.Bold(true).Foreground(p.sky),
 		BrokenLink: base.Underline(true).Foreground(p.red),
 
 		Quote:    base.Italic(true).Foreground(p.subtext),

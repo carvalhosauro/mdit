@@ -17,8 +17,9 @@ import (
 	"github.com/carvalhosauro/mdit/internal/theme"
 )
 
-// FollowLinkMsg is emitted (via a tea.Cmd) when the user presses Ctrl+] or
-// Ctrl+O on a wikilink; the UI layer resolves and opens Target.
+// FollowLinkMsg is emitted (via a tea.Cmd) when the user presses Ctrl+O (or
+// Ctrl+]) on a [[wikilink]] or [label](dest) under the cursor. The App resolves
+// vault targets and shows external URLs on the status bar.
 type FollowLinkMsg struct{ Target string }
 
 // AutocompleteMsg is emitted (via a tea.Cmd) right after the user types the
