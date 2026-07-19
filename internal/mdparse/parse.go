@@ -32,6 +32,10 @@ const (
 	ThematicBreak
 	Frontmatter
 	Other // HTML block and any other unmapped content.
+	// IndentedCode is a 4-space (or tab) indented code block. It is kept distinct
+	// from CodeFence because it has no ``` delimiter lines and no info string.
+	// Appended last so existing Kind values (Blank..Other) keep their integers.
+	IndentedCode
 )
 
 // Block is a contiguous, inclusive range of raw line indices [Start, End] with
@@ -318,8 +322,10 @@ func mapKind(n ast.Node) Kind {
 		return Heading
 	case ast.KindParagraph, ast.KindTextBlock:
 		return Paragraph
-	case ast.KindFencedCodeBlock, ast.KindCodeBlock:
+	case ast.KindFencedCodeBlock:
 		return CodeFence
+	case ast.KindCodeBlock:
+		return IndentedCode
 	case ast.KindList:
 		return List
 	case ast.KindBlockquote:

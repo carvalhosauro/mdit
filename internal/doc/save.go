@@ -21,12 +21,13 @@ func Load(path string) (*Document, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &Document{
-				lines:   []string{""},
-				path:    path,
-				hasPath: true,
-				now:     time.Now,
-			}, nil
+			d := &Document{
+				lines: []string{""},
+				path:  path,
+				now:   time.Now,
+			}
+			d.savedContent = d.Content()
+			return d, nil
 		}
 		return nil, err
 	}
@@ -34,13 +35,14 @@ func Load(path string) (*Document, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Document{
+	d := &Document{
 		lines:   splitLines(string(data)),
 		path:    path,
-		hasPath: true,
 		modTime: info.ModTime(),
 		now:     time.Now,
-	}, nil
+	}
+	d.savedContent = d.Content()
+	return d, nil
 }
 
 // Save writes the document to Path if the file on disk has not changed
@@ -48,7 +50,7 @@ func Load(path string) (*Document, error) {
 // Save returns ErrExternalChange without writing anything. Use SaveForce to
 // overwrite unconditionally.
 func (d *Document) Save() error {
-	if !d.hasPath || d.path == "" {
+	if d.path == "" {
 		return errNoPath
 	}
 	info, err := os.Stat(d.path)
@@ -65,7 +67,7 @@ func (d *Document) Save() error {
 // SaveForce writes the document to Path unconditionally, ignoring any
 // external modification.
 func (d *Document) SaveForce() error {
-	if !d.hasPath || d.path == "" {
+	if d.path == "" {
 		return errNoPath
 	}
 	return d.writeFile()
@@ -73,9 +75,11 @@ func (d *Document) SaveForce() error {
 
 // writeFile performs the actual write and re-stats the file so d.modTime
 // reflects exactly what's on disk (avoiding filesystem timestamp-resolution
-// races), then marks the document clean at the current Version.
+// races), then marks the document clean by recording what was written as
+// the saved content.
 func (d *Document) writeFile() error {
-	if err := os.WriteFile(d.path, []byte(d.Content()), 0o644); err != nil {
+	content := d.Content()
+	if err := os.WriteFile(d.path, []byte(content), 0o644); err != nil {
 		return err
 	}
 	info, err := os.Stat(d.path)
@@ -83,6 +87,7 @@ func (d *Document) writeFile() error {
 		return err
 	}
 	d.modTime = info.ModTime()
-	d.savedVersion = d.version
+	d.savedContent = content
+	d.dirtyValid = false // saved content changed dirtiness without a version bump
 	return nil
 }

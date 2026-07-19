@@ -12,6 +12,26 @@ make run ARGS=notes/   # run mdit against a vault
 
 Run `make` with no target to list every task.
 
+## Toolchain requirements
+
+mdit targets **Go 1.26+** (`go.mod`), and the local quality gate must run on a
+toolchain that matches:
+
+- **golangci-lint must be built with Go ≥ 1.26.** A copy built with an older Go
+  (e.g. a distro package, or a stale `$GOBIN/golangci-lint` from a previous
+  toolchain) refuses to run against a 1.26 module and `make lint` fails before
+  linting anything. Fix: reinstall the tools with your current Go —
+  `make tools` (installs `golangci-lint`, `lefthook`, `govulncheck` into
+  `$GOBIN`). If `make lint` still errors on the Go version, check `which
+  golangci-lint` resolves to `$GOBIN`, not a system path.
+- `make check` (fmt-check + vet + lint + test) is the gate to run before pushing;
+  it mirrors the required CI checks.
+
+> Tool versions are still `@latest` in the Makefile (`GOLANGCI_VERSION` etc.).
+> Pinning them to exact tags — so local == CI is byte-for-byte reproducible — is
+> tracked under *Recommendations* below; pin once a 1.26-compatible tag is
+> confirmed.
+
 ## Common tasks
 
 | Command | What it does |

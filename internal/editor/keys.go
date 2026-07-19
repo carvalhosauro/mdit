@@ -70,8 +70,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.goalCol = pos.Col
 		}
 
-	case tea.KeyCtrlCloseBracket:
-		if target, ok := mdparse.WikiLinkAt(m.doc.Line(m.cursor.Line), m.cursor.Col); ok {
+	case tea.KeyCtrlCloseBracket, tea.KeyCtrlO:
+		// Ctrl+O is the portable binding; Ctrl+] is canonical but many
+		// terminals swallow it (telnet escape / WSL).
+		line := m.doc.Line(m.cursor.Line)
+		col := m.cursor.Col
+		var target string
+		var ok bool
+		if target, ok = mdparse.WikiLinkAt(line, col); !ok {
+			target, ok = mdparse.LinkAt(line, col)
+		}
+		if ok {
 			t := target
 			m.recompute()
 			return m, func() tea.Msg { return FollowLinkMsg{Target: t} }
