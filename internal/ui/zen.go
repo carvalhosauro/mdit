@@ -57,6 +57,18 @@ func (a *App) handleZenKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a.doQuit()
 	case tea.KeyCtrlS:
 		return a.doSave()
+	case tea.KeyCtrlP:
+		// Navigation stays available in zen: open the finder and return to zen
+		// on Esc or after picking a note.
+		a.openFinder()
+		return a, nil
+	case tea.KeyCtrlB:
+		m, cmd := a.goBack()
+		// goBack lands in edit mode; keep reading immersion if history popped.
+		if a.mode == modeEdit {
+			return a.enterZen()
+		}
+		return m, cmd
 	case tea.KeyUp, tea.KeyDown, tea.KeyPgUp, tea.KeyPgDown, tea.KeyHome, tea.KeyEnd:
 		var cmd tea.Cmd
 		a.editor, cmd = a.editor.Update(msg)

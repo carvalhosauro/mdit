@@ -85,15 +85,32 @@ func (a *App) openFinder() {
 	}
 	a.refreshFinderItems()
 	a.resizeFinder()
+	// Remember where we came from so Esc / open can restore zen (or edit).
+	if a.mode == modeZen {
+		a.finderReturn = modeZen
+	} else {
+		a.finderReturn = modeEdit
+	}
 	a.mode = modeFinder
 	a.statusErr = ""
 	a.statusMsg = ""
 }
 
+// closeFinder leaves the finder overlay and restores the mode that opened it.
+func (a *App) closeFinder() {
+	if a.finderReturn == modeZen {
+		a.mode = modeZen
+		a.layoutZenEditor()
+		return
+	}
+	a.mode = modeEdit
+	a.layoutEditor()
+}
+
 func (a *App) handleFinderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEscape:
-		a.mode = modeEdit
+		a.closeFinder()
 		return a, nil
 	case tea.KeyEnter:
 		// While filtering, let the list accept the filter first if needed.
@@ -106,8 +123,15 @@ func (a *App) handleFinderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !ok {
 			return a, nil
 		}
+		ret := a.finderReturn
 		a.mode = modeEdit
-		return a.requestOpen(item.path)
+		m, cmd := a.requestOpen(item.path)
+		// Stay in zen after navigating when the finder was opened from zen,
+		// unless a dirty/conflict prompt took over.
+		if ret == modeZen && a.mode == modeEdit {
+			return a.enterZen()
+		}
+		return m, cmd
 	}
 
 	var cmd tea.Cmd

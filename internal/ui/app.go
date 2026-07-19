@@ -76,7 +76,8 @@ type App struct {
 
 	history []string // navigation stack (paths); pushed on finder/follow open
 
-	finder list.Model
+	finder       list.Model
+	finderReturn mode // mode to restore when the finder closes (edit or zen)
 
 	acItems  []string // autocomplete candidate names
 	acIndex  int
