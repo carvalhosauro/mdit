@@ -7,8 +7,6 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-const statusHints = "^S save  ^P notes  ^E zen  ^G help"
-
 // renderStatusBar draws the bottom bar with a clear hierarchy: file name
 // (bold) and dirty marker (accent) first, key hints dimmed, and on the right a
 // transient flash ("✓ saved"), an error, and the cursor position.
@@ -46,7 +44,7 @@ func (a *App) renderStatusBar() string {
 
 	// Left side: prefer dropping hints, then truncating the name, over ever
 	// pushing the message/position off screen.
-	hints := "  " + statusHints
+	hints := "  " + barHints()
 	leftW := runewidth.StringWidth(name+dirty) + runewidth.StringWidth(hints)
 	if leftW+rightW+1 > w {
 		hints = ""

@@ -20,12 +20,24 @@ type Position struct {
 // support. The zero value is not usable; construct one with Load or
 // NewFromString.
 type Document struct {
-	lines   []string
-	path    string
-	hasPath bool
+	lines []string
+	path  string
 
-	version      int
-	savedVersion int
+	version int
+
+	// savedContent holds the buffer content (as returned by Content) at the
+	// time of the last successful Load/NewFromString/Save, used by Dirty to
+	// compare actual content rather than version counters (undoing back to
+	// the saved state must report clean).
+	savedContent string
+
+	// dirty memoizes the last Dirty() result so the per-frame status bar
+	// doesn't rebuild Content() every render. It is keyed by version (bumped
+	// on every mutation) and invalidated explicitly on save, the only event
+	// that changes dirtiness without a version bump.
+	dirtyMemo  bool
+	dirtyVer   int
+	dirtyValid bool
 
 	modTime time.Time
 
@@ -42,10 +54,12 @@ type Document struct {
 // Save/SaveForce return an error until the document has a path (this task's
 // interface has no SaveAs yet).
 func NewFromString(s string) *Document {
-	return &Document{
+	d := &Document{
 		lines: splitLines(s),
 		now:   time.Now,
 	}
+	d.savedContent = d.Content()
+	return d
 }
 
 // splitLines turns file content into a line buffer that round-trips through
@@ -95,20 +109,53 @@ func (d *Document) Version() int {
 	return d.version
 }
 
-// Dirty reports whether the document has unsaved changes.
+// Dirty reports whether the document has unsaved changes. It compares the
+// current content against the content at the last Load/NewFromString/Save,
+// not version counters: undoing back to the saved state must report clean
+// even though Version() has moved on.
 func (d *Document) Dirty() bool {
-	return d.version != d.savedVersion
+	if d.dirtyValid && d.dirtyVer == d.version {
+		return d.dirtyMemo
+	}
+	d.dirtyMemo = d.Content() != d.savedContent
+	d.dirtyVer = d.version
+	d.dirtyValid = true
+	return d.dirtyMemo
 }
 
 // Content renders the buffer back to text: lines joined by "\n" with a
-// trailing newline.
+// trailing newline. An empty document (a single empty line) renders as the
+// empty string so Save writes a true 0-byte file.
 func (d *Document) Content() string {
+	if len(d.lines) == 1 && d.lines[0] == "" {
+		return ""
+	}
 	return strings.Join(d.lines, "\n") + "\n"
+}
+
+// clamp constrains p to a valid position within the buffer: Line is clamped
+// to [0, len(d.lines)-1] and Col is clamped to [0, rune count of that line].
+// The public mutators apply it to every incoming Position so they never
+// panic on out-of-range input (e.g. a Position computed from stale layout
+// state).
+func (d *Document) clamp(p Position) Position {
+	if p.Line < 0 {
+		p.Line = 0
+	} else if maxLine := len(d.lines) - 1; p.Line > maxLine {
+		p.Line = maxLine
+	}
+	if p.Col < 0 {
+		p.Col = 0
+	} else if maxCol := utf8.RuneCountInString(d.lines[p.Line]); p.Col > maxCol {
+		p.Col = maxCol
+	}
+	return p
 }
 
 // Insert inserts text (which may contain "\n") at p and returns the cursor
 // position immediately after the inserted text.
 func (d *Document) Insert(p Position, text string) Position {
+	p = d.clamp(p)
 	if text == "" {
 		return p
 	}
@@ -121,6 +168,8 @@ func (d *Document) Insert(p Position, text string) Position {
 // range crosses a "\n". from/to are normalized so order doesn't matter. It
 // returns the (now smaller) position, the cursor position after deletion.
 func (d *Document) DeleteRange(from, to Position) Position {
+	from = d.clamp(from)
+	to = d.clamp(to)
 	if to.Line < from.Line || (to.Line == from.Line && to.Col < from.Col) {
 		from, to = to, from
 	}
@@ -137,6 +186,7 @@ func (d *Document) DeleteRange(from, to Position) Position {
 // the previous line if p is at column 0. It is a no-op at the start of the
 // document.
 func (d *Document) DeleteBackward(p Position) Position {
+	p = d.clamp(p)
 	if p.Col > 0 {
 		return d.DeleteRange(Position{Line: p.Line, Col: p.Col - 1}, p)
 	}
@@ -151,6 +201,7 @@ func (d *Document) DeleteBackward(p Position) Position {
 // the next line if p is at the end of the line. It is a no-op at the end of
 // the document.
 func (d *Document) DeleteForward(p Position) Position {
+	p = d.clamp(p)
 	lineLen := utf8.RuneCountInString(d.lines[p.Line])
 	if p.Col < lineLen {
 		d.DeleteRange(p, Position{Line: p.Line, Col: p.Col + 1})
