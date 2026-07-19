@@ -51,6 +51,8 @@ func Block(res mdparse.Result, i int, ctx Context) []string {
 		lines = renderParagraph(b, res.Source, ctx)
 	case mdparse.CodeFence:
 		lines = renderFence(b, res.Source, ctx)
+	case mdparse.IndentedCode:
+		lines = renderIndentedCode(b, res.Source, ctx)
 	case mdparse.List:
 		lines = renderList(b, res.Source, ctx)
 	case mdparse.Table:
@@ -180,6 +182,15 @@ func renderFence(b mdparse.Block, source []byte, ctx Context) []string {
 	if hl, ok := highlight(code, lang, th.ChromaStyle); ok {
 		return codeLines(strings.Split(hl, "\n"), ctx.Width, nil)
 	}
+	return codeLines(strings.Split(code, "\n"), ctx.Width, &th.CodeBlock)
+}
+
+// renderIndentedCode renders an indented code block. Unlike a fenced block it
+// has no info string and no language, so it always uses the plain CodeBlock
+// style (no chroma highlighting) and there are no fence delimiter lines to strip.
+func renderIndentedCode(b mdparse.Block, source []byte, ctx Context) []string {
+	th := ctx.Theme
+	code, _ := codeContent(b.Node, source)
 	return codeLines(strings.Split(code, "\n"), ctx.Width, &th.CodeBlock)
 }
 
