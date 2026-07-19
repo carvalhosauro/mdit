@@ -166,21 +166,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) handleEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyCtrlS:
-		return a.doSave()
-	case tea.KeyCtrlQ:
-		return a.doQuit()
-	case tea.KeyCtrlP:
-		a.openFinder()
-		return a, nil
-	case tea.KeyCtrlE:
-		return a.enterZen()
-	case tea.KeyCtrlB:
-		return a.goBack()
-	case tea.KeyCtrlG:
-		a.mode = modeHelp
-		return a, nil
+	// Dispatch from the single binding table (see keymap.go) so the keys the
+	// help overlay advertises are exactly the keys handled here.
+	for _, b := range bindings {
+		if b.run == nil {
+			continue
+		}
+		for _, t := range b.types {
+			if msg.Type == t {
+				return b.run(a)
+			}
+		}
 	}
 
 	var cmd tea.Cmd
