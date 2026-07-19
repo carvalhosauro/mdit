@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/mattn/go-runewidth"
@@ -20,6 +21,8 @@ func (a *App) renderPrompt() string {
 		msg = promptQuitText
 	case promptSaveConflict:
 		msg = promptConflictText
+	case promptCreateNote:
+		msg = fmt.Sprintf("Create note %q? [c]reate / [Esc] cancel", a.pendingTarget)
 	}
 	w := a.width
 	if w < 1 {

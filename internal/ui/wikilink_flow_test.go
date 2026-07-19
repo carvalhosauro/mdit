@@ -42,8 +42,49 @@ func TestWikilink_FollowBackBrokenAutocomplete(t *testing.T) {
 		tm.Send(tea.KeyMsg{Type: tea.KeyRight})
 	}
 	tm.Send(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	// P4: a broken link now offers to create the note instead of flashing an
+	// error.
 	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
-		return strings.Contains(ansi.Strip(string(bts)), "broken link: nope")
+		return strings.Contains(ansi.Strip(string(bts)), `Create note "nope"`)
+	}, teatest.WithDuration(3*time.Second))
+	tm.Send(tea.KeyMsg{Type: tea.KeyEscape}) // cancel the create prompt
+
+	waitQuit(t, tm)
+}
+
+func TestMarkdownLink_FollowVaultTarget(t *testing.T) {
+	root, v := setupVault(t, map[string]string{
+		"a.md": "[other](b)\n",
+		"b.md": "# B Note\n\n",
+	})
+	app := newApp(t, v, filepath.Join(root, "a.md"))
+	tm := teatest.NewTestModel(t, app, teatest.WithInitialTermSize(80, 24))
+	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
+		return strings.Contains(ansi.Strip(string(bts)), "a.md")
+	}, teatest.WithDuration(2*time.Second))
+
+	// Cursor at 0,0 is already on [other](b); Ctrl+O follows dest into b.md.
+	tm.Send(tea.KeyMsg{Type: tea.KeyCtrlO})
+	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
+		return strings.Contains(ansi.Strip(string(bts)), "b.md")
+	}, teatest.WithDuration(3*time.Second))
+
+	waitQuit(t, tm)
+}
+
+func TestMarkdownLink_ExternalURLFlashes(t *testing.T) {
+	root, v := setupVault(t, map[string]string{
+		"a.md": "[web](https://example.com)\n",
+	})
+	app := newApp(t, v, filepath.Join(root, "a.md"))
+	tm := teatest.NewTestModel(t, app, teatest.WithInitialTermSize(80, 24))
+	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
+		return strings.Contains(ansi.Strip(string(bts)), "a.md")
+	}, teatest.WithDuration(2*time.Second))
+
+	tm.Send(tea.KeyMsg{Type: tea.KeyCtrlO})
+	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
+		return strings.Contains(ansi.Strip(string(bts)), "https://example.com")
 	}, teatest.WithDuration(3*time.Second))
 
 	waitQuit(t, tm)

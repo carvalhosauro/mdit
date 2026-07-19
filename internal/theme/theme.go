@@ -127,8 +127,10 @@ func fromPalette(p palette) Theme {
 		CodeBlock:       base.Foreground(p.text),
 		CodeBlockBorder: base.Foreground(p.surface2),
 
-		Link:       base.Underline(true).Foreground(p.blue),
-		WikiLink:   base.Underline(true).Foreground(p.sky),
+		Link: base.Underline(true).Foreground(p.blue),
+		// WikiLinks are bold sky (no underline) so they read as vault-internal,
+		// distinct from blue-underlined markdown [text](url) links.
+		WikiLink:   base.Bold(true).Foreground(p.sky),
 		BrokenLink: base.Underline(true).Foreground(p.red),
 
 		Quote:    base.Italic(true).Foreground(p.subtext),
@@ -150,8 +152,10 @@ func fromPalette(p palette) Theme {
 
 		StatusBarName:  bar.Bold(true),
 		StatusBarDirty: base.Foreground(p.peach).Background(p.surface),
-		StatusBarHint:  base.Foreground(p.overlay).Background(p.surface),
-		StatusBarOK:    base.Foreground(p.green).Background(p.surface),
+		// Hints / word count / cursor use subtext (not overlay): overlay on
+		// surface is near-invisible on many terminals and made the bar unreadable.
+		StatusBarHint: base.Foreground(p.subtext).Background(p.surface),
+		StatusBarOK:   base.Foreground(p.green).Background(p.surface),
 
 		PromptBar: base.Foreground(p.base).Background(p.peach),
 		PromptKey: base.Foreground(p.base).Background(p.peach).Bold(true).Underline(true),

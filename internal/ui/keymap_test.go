@@ -84,3 +84,50 @@ func TestHandleEditKey_CtrlCDirtyPrompts(t *testing.T) {
 		t.Fatalf("expected quit-dirty prompt, got mode=%d prompt=%d", a.mode, a.prompt)
 	}
 }
+
+// P2: Escape clears a lingering status flash.
+func TestHandleEditKey_EscClearsFlash(t *testing.T) {
+	a := newTestApp("x")
+	a.statusErr = "boom"
+	a.handleEditKey(tea.KeyMsg{Type: tea.KeyEscape})
+	if a.statusErr != "" {
+		t.Fatalf("Esc should clear statusErr, got %q", a.statusErr)
+	}
+
+	a.statusMsg = "✓ saved"
+	a.handleEditKey(tea.KeyMsg{Type: tea.KeyEscape})
+	if a.statusMsg != "" {
+		t.Fatalf("Esc should clear statusMsg, got %q", a.statusMsg)
+	}
+}
+
+// P5: word count counts whitespace-separated tokens across all lines.
+func TestWordCount(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int
+	}{
+		{"", 0},
+		{"one two three", 3},
+		{"line one\nline two\n", 4},
+	}
+	for _, c := range cases {
+		if got := wordCount(doc.NewFromString(c.in)); got != c.want {
+			t.Errorf("wordCount(%q)=%d want %d", c.in, got, c.want)
+		}
+	}
+}
+
+// P3: an empty vault shows a hint in the finder overlay.
+func TestFinder_EmptyVaultHint(t *testing.T) {
+	a := newTestApp("")
+	a.width, a.height = 80, 24
+	a.layoutEditor()
+	a.openFinder()
+	if got := len(a.finder.Items()); got != 0 {
+		t.Fatalf("precondition: expected empty finder, got %d items", got)
+	}
+	if !strings.Contains(a.viewFinder(), "No notes yet") {
+		t.Error("empty finder should show a hint")
+	}
+}

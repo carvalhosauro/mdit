@@ -5,7 +5,9 @@ package ui
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -34,6 +36,7 @@ const (
 	promptNone promptKind = iota
 	promptQuitDirty
 	promptSaveConflict
+	promptCreateNote
 )
 
 // openNoteMsg requests opening a note path (after dirty prompts resolve).
@@ -60,6 +63,9 @@ type App struct {
 	// afterPrompt runs after a successful save that was started for some
 	// larger intent (e.g. tea.Quit after quit→save, or open-note).
 	afterPrompt tea.Cmd
+	// pendingTarget is the wikilink target awaiting a create-note confirmation
+	// (promptCreateNote).
+	pendingTarget string
 
 	width, height int
 	statusErr     string
@@ -70,7 +76,8 @@ type App struct {
 
 	history []string // navigation stack (paths); pushed on finder/follow open
 
-	finder list.Model
+	finder       list.Model
+	finderReturn mode // mode to restore when the finder closes (edit or zen)
 
 	acItems  []string // autocomplete candidate names
 	acIndex  int
@@ -90,6 +97,7 @@ func NewApp(v *vault.Vault, initial *doc.Document, th theme.Theme) *App {
 		return !ok
 	}
 	ed := editor.New(initial, th, isBroken)
+	ed.SetPlaceholder("Start typing…")
 	a := &App{
 		vault:  v,
 		theme:  th,
@@ -166,6 +174,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) handleEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// P2: Escape dismisses a lingering status flash instead of waiting out the
+	// timeout. Only when one is showing; otherwise fall through to the editor.
+	if msg.Type == tea.KeyEscape && (a.statusErr != "" || a.statusMsg != "") {
+		a.clearFlash()
+		return a, nil
+	}
+
 	// Dispatch from the single binding table (see keymap.go) so the keys the
 	// help overlay advertises are exactly the keys handled here.
 	for _, b := range bindings {
@@ -239,6 +254,7 @@ func (a *App) clearPrompt() {
 	a.mode = modeEdit
 	a.prompt = promptNone
 	a.afterPrompt = nil
+	a.pendingTarget = ""
 }
 
 // finishPrompt leaves prompt mode and runs afterPrompt if set.
@@ -304,6 +320,10 @@ func (a *App) handlePromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case 'c':
 			a.clearPrompt()
 			return a, nil
+		}
+	case promptCreateNote:
+		if ch == 'c' {
+			return a.doCreateNote(a.pendingTarget)
 		}
 	}
 	return a, nil
@@ -418,13 +438,128 @@ func (a *App) goBack() (tea.Model, tea.Cmd) {
 }
 
 func (a *App) handleFollowLink(target string) (tea.Model, tea.Cmd) {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return a, nil
+	}
+	// External URLs stay in the terminal: show the destination, don't shell out.
+	if isExternalURL(target) {
+		return a, a.flashOK(target)
+	}
 	if a.vault == nil {
 		return a, a.flashErr("broken link: " + target)
 	}
-	path, ok := a.vault.Resolve(target)
-	if !ok {
-		return a, a.flashErr("broken link: " + target)
+	if path, ok := a.resolveVaultTarget(target); ok {
+		a.statusErr = ""
+		return a.requestOpen(path)
 	}
-	a.statusErr = ""
-	return a.requestOpen(path)
+	// Offer create only for simple note names ([[nota]] / [x](nota)), not paths.
+	if isSimpleNoteName(target) {
+		a.pendingTarget = stripNoteExt(target)
+		a.enterPrompt(promptCreateNote, nil)
+		return a, nil
+	}
+	return a, a.flashErr("broken link: " + target)
+}
+
+func stripNoteExt(s string) string {
+	lower := strings.ToLower(s)
+	for _, ext := range []string{".markdown", ".md"} {
+		if strings.HasSuffix(lower, ext) {
+			return s[:len(s)-len(ext)]
+		}
+	}
+	return s
+}
+
+func isExternalURL(s string) bool {
+	lower := strings.ToLower(s)
+	return strings.HasPrefix(lower, "http://") ||
+		strings.HasPrefix(lower, "https://") ||
+		strings.HasPrefix(lower, "mailto:")
+}
+
+func isSimpleNoteName(s string) bool {
+	if s == "" || strings.Contains(s, "://") {
+		return false
+	}
+	return !strings.ContainsAny(s, `/\`)
+}
+
+// resolveVaultTarget maps a follow target to an absolute note path inside the
+// vault: name resolution first (wikilink-style), then a path relative to the
+// current note's directory or the vault root.
+func (a *App) resolveVaultTarget(target string) (string, bool) {
+	if path, ok := a.vault.Resolve(target); ok {
+		return path, true
+	}
+	var candidates []string
+	if cur := a.editor.Doc().Path(); cur != "" {
+		candidates = append(candidates, filepath.Join(filepath.Dir(cur), target))
+	}
+	candidates = append(candidates, filepath.Join(a.vault.Root(), target))
+	for _, c := range candidates {
+		if path, ok := a.vaultFileIfInside(c); ok {
+			return path, true
+		}
+		// Bare path without extension → try .md
+		if filepath.Ext(c) == "" {
+			if path, ok := a.vaultFileIfInside(c + ".md"); ok {
+				return path, true
+			}
+		}
+	}
+	return "", false
+}
+
+func (a *App) vaultFileIfInside(path string) (string, bool) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", false
+	}
+	rel, err := filepath.Rel(a.vault.Root(), abs)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	st, err := os.Stat(abs)
+	if err != nil || st.IsDir() {
+		return "", false
+	}
+	return abs, true
+}
+
+// doCreateNote creates <target>.md in the current note's directory (or the vault
+// root when the buffer has no path yet), empty (no template), then opens it and
+// pushes the current note onto the navigation history. Invoked on confirming
+// promptCreateNote.
+func (a *App) doCreateNote(target string) (tea.Model, tea.Cmd) {
+	dir := ""
+	if cur := a.editor.Doc().Path(); cur != "" {
+		dir = filepath.Dir(cur)
+	} else if a.vault != nil {
+		dir = a.vault.Root()
+	}
+	path := filepath.Join(dir, target+".md")
+	// Keep creation inside the vault: a target like "../../x" must not escape.
+	if a.vault != nil {
+		rel, err := filepath.Rel(a.vault.Root(), path)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			a.clearPrompt()
+			return a, a.flashErr("invalid note name: " + target)
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		a.clearPrompt()
+		return a, a.flashErr(err.Error())
+	}
+	if err := os.WriteFile(path, []byte(""), 0o644); err != nil {
+		a.clearPrompt()
+		return a, a.flashErr(err.Error())
+	}
+	if a.vault != nil {
+		_ = a.vault.Rescan()
+		a.refreshFinderItems()
+	}
+	a.clearPrompt()
+	return a.doOpenNote(path, true)
 }

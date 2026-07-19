@@ -25,7 +25,7 @@ var bindings = []keyBinding{
 	{types: []tea.KeyType{tea.KeyCtrlP}, hint: "^P", desc: "find note", barLabel: "notes", run: (*App).cmdOpenFinder},
 	{types: []tea.KeyType{tea.KeyCtrlE}, hint: "^E", desc: "zen mode", barLabel: "zen", run: (*App).enterZen},
 	{types: []tea.KeyType{tea.KeyCtrlB}, hint: "^B", desc: "back to previous note", run: (*App).goBack},
-	{types: []tea.KeyType{tea.KeyCtrlCloseBracket}, hint: "^]", desc: "follow wikilink under cursor"},
+	{types: []tea.KeyType{tea.KeyCtrlO, tea.KeyCtrlCloseBracket}, hint: "^O", desc: "follow [[wikilink]] or [link] under cursor"},
 	{hint: "[[", desc: "wikilink autocomplete"},
 	{hint: "^Z / ^Y", desc: "undo / redo"},
 	{types: []tea.KeyType{tea.KeyCtrlG}, hint: "^G", desc: "this help", barLabel: "help", run: (*App).cmdHelp},
@@ -57,4 +57,12 @@ func (a *App) cmdOpenFinder() (tea.Model, tea.Cmd) {
 func (a *App) cmdHelp() (tea.Model, tea.Cmd) {
 	a.mode = modeHelp
 	return a, nil
+}
+
+// clearFlash removes any transient status message/error and invalidates pending
+// expiry timers so a later tick can't clear a newer flash.
+func (a *App) clearFlash() {
+	a.statusErr = ""
+	a.statusMsg = ""
+	a.flashID++
 }
