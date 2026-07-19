@@ -42,9 +42,12 @@ func TestWikilink_FollowBackBrokenAutocomplete(t *testing.T) {
 		tm.Send(tea.KeyMsg{Type: tea.KeyRight})
 	}
 	tm.Send(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	// P4: a broken link now offers to create the note instead of flashing an
+	// error.
 	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
-		return strings.Contains(ansi.Strip(string(bts)), "broken link: nope")
+		return strings.Contains(ansi.Strip(string(bts)), `Create note "nope"`)
 	}, teatest.WithDuration(3*time.Second))
+	tm.Send(tea.KeyMsg{Type: tea.KeyEscape}) // cancel the create prompt
 
 	waitQuit(t, tm)
 }

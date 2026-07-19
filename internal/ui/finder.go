@@ -118,11 +118,16 @@ func (a *App) handleFinderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // viewFinder draws the finder as a modal over the dimmed editor, so the note
 // being edited stays visible as context instead of vanishing.
 func (a *App) viewFinder() string {
+	content := a.finder.View()
+	// P3: an empty vault gets a hint instead of a bare, blank list.
+	if len(a.finder.Items()) == 0 {
+		content += "\n" + a.theme.Dim.Render("No notes yet — save a note to populate the vault.")
+	}
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(a.theme.MenuBorder.GetForeground()).
 		Padding(0, 1).
-		Render(a.finder.View())
+		Render(content)
 	bg := a.dimContent(a.editor.View() + "\n" + a.renderStatusBar())
 	return overlayCenter(bg, box, a.width, a.height)
 }

@@ -58,3 +58,11 @@ func (a *App) cmdHelp() (tea.Model, tea.Cmd) {
 	a.mode = modeHelp
 	return a, nil
 }
+
+// clearFlash removes any transient status message/error and invalidates pending
+// expiry timers so a later tick can't clear a newer flash.
+func (a *App) clearFlash() {
+	a.statusErr = ""
+	a.statusMsg = ""
+	a.flashID++
+}

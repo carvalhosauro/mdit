@@ -53,6 +53,10 @@ type Model struct {
 	// renderBlock renders a non-cursor block; a field so tests can wrap it to
 	// count render calls. Defaults to render.Block.
 	renderBlock func(res mdparse.Result, i int, ctx render.Context) []string
+
+	// placeholder is dim hint text drawn on the first row when the buffer is a
+	// single empty line; empty string disables it.
+	placeholder string
 }
 
 // New constructs an editor Model over d with the given theme and broken-link
@@ -109,6 +113,10 @@ func (m *Model) InsertText(s string) {
 	m.goalCol = m.cursor.Col
 	m.recompute()
 }
+
+// SetPlaceholder sets the dim hint drawn when the document is a single empty
+// line. It does not force a re-layout; View reads it directly.
+func (m *Model) SetPlaceholder(s string) { m.placeholder = s }
 
 // SetZen toggles read-only fully-rendered mode (no raw cursor block).
 func (m *Model) SetZen(on bool) {
@@ -177,6 +185,12 @@ func (m Model) View() string {
 // always raw, so its row is a plain (single-style) segment and cell inversion is
 // exact without ANSI surgery.
 func (m Model) renderCursorRow() string {
+	// P3: an empty buffer shows a dim placeholder after the cursor, so a fresh
+	// note isn't a blank void. It vanishes on the first character typed.
+	if m.placeholder != "" && m.doc.LineCount() == 1 && m.doc.Line(0) == "" {
+		rev := m.theme.RawBlock.Reverse(true)
+		return rev.Render(" ") + m.theme.Dim.Render(m.placeholder)
+	}
 	_, wr, idx, _ := m.cursorLocation()
 	style := m.theme.RawBlock
 	rev := style.Reverse(true)

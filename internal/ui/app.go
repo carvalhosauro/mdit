@@ -5,7 +5,9 @@ package ui
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -34,6 +36,7 @@ const (
 	promptNone promptKind = iota
 	promptQuitDirty
 	promptSaveConflict
+	promptCreateNote
 )
 
 // openNoteMsg requests opening a note path (after dirty prompts resolve).
@@ -60,6 +63,9 @@ type App struct {
 	// afterPrompt runs after a successful save that was started for some
 	// larger intent (e.g. tea.Quit after quit→save, or open-note).
 	afterPrompt tea.Cmd
+	// pendingTarget is the wikilink target awaiting a create-note confirmation
+	// (promptCreateNote).
+	pendingTarget string
 
 	width, height int
 	statusErr     string
@@ -90,6 +96,7 @@ func NewApp(v *vault.Vault, initial *doc.Document, th theme.Theme) *App {
 		return !ok
 	}
 	ed := editor.New(initial, th, isBroken)
+	ed.SetPlaceholder("Start typing…")
 	a := &App{
 		vault:  v,
 		theme:  th,
@@ -166,6 +173,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) handleEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// P2: Escape dismisses a lingering status flash instead of waiting out the
+	// timeout. Only when one is showing; otherwise fall through to the editor.
+	if msg.Type == tea.KeyEscape && (a.statusErr != "" || a.statusMsg != "") {
+		a.clearFlash()
+		return a, nil
+	}
+
 	// Dispatch from the single binding table (see keymap.go) so the keys the
 	// help overlay advertises are exactly the keys handled here.
 	for _, b := range bindings {
@@ -239,6 +253,7 @@ func (a *App) clearPrompt() {
 	a.mode = modeEdit
 	a.prompt = promptNone
 	a.afterPrompt = nil
+	a.pendingTarget = ""
 }
 
 // finishPrompt leaves prompt mode and runs afterPrompt if set.
@@ -304,6 +319,10 @@ func (a *App) handlePromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case 'c':
 			a.clearPrompt()
 			return a, nil
+		}
+	case promptCreateNote:
+		if ch == 'c' {
+			return a.doCreateNote(a.pendingTarget)
 		}
 	}
 	return a, nil
@@ -423,8 +442,47 @@ func (a *App) handleFollowLink(target string) (tea.Model, tea.Cmd) {
 	}
 	path, ok := a.vault.Resolve(target)
 	if !ok {
-		return a, a.flashErr("broken link: " + target)
+		// P4: a broken link is an offer to create the note, not a dead end.
+		a.pendingTarget = target
+		a.enterPrompt(promptCreateNote, nil)
+		return a, nil
 	}
 	a.statusErr = ""
 	return a.requestOpen(path)
+}
+
+// doCreateNote creates <target>.md in the current note's directory (or the vault
+// root when the buffer has no path yet), empty (no template), then opens it and
+// pushes the current note onto the navigation history. Invoked on confirming
+// promptCreateNote.
+func (a *App) doCreateNote(target string) (tea.Model, tea.Cmd) {
+	dir := ""
+	if cur := a.editor.Doc().Path(); cur != "" {
+		dir = filepath.Dir(cur)
+	} else if a.vault != nil {
+		dir = a.vault.Root()
+	}
+	path := filepath.Join(dir, target+".md")
+	// Keep creation inside the vault: a target like "../../x" must not escape.
+	if a.vault != nil {
+		rel, err := filepath.Rel(a.vault.Root(), path)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			a.clearPrompt()
+			return a, a.flashErr("invalid note name: " + target)
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		a.clearPrompt()
+		return a, a.flashErr(err.Error())
+	}
+	if err := os.WriteFile(path, []byte(""), 0o644); err != nil {
+		a.clearPrompt()
+		return a, a.flashErr(err.Error())
+	}
+	if a.vault != nil {
+		_ = a.vault.Rescan()
+		a.refreshFinderItems()
+	}
+	a.clearPrompt()
+	return a.doOpenNote(path, true)
 }
