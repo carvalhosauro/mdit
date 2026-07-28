@@ -41,7 +41,7 @@ se cruzam**:
 **Track A — modelo de cursor/edição** (sequencial; cada etapa constrói sobre a
 anterior, todas tocam `doc.Position`/cursor/`DeleteRange`/seam de edição):
 ```
-M0  →  v2 Polish  →  S0 Selection/clipboard  →  Lazy-raw (bridge)  →  v3 Structured editing
+M0 ✅  →  v2 Polish ✅  →  S0 Selection/clipboard ✅  →  Lazy-raw (bridge)  →  v3 Structured editing
 ```
 
 **Track B — render/parse** (ortogonal; interleava a qualquer momento, até em paralelo):
@@ -138,7 +138,7 @@ o buffer — render deriva da fonte, fonte intacta.
 
 ---
 
-## S0 — Selection & clipboard (Track A)
+## S0 — Selection & clipboard (Track A) ✅
 
 **Meta:** o maior surface de editor faltando. Win geral (não-gated por v3) e pré-req
 do lazy-raw/widgets — por isso puxado pra frente (era 1º item do v3). `doc.Position`
@@ -146,8 +146,8 @@ do lazy-raw/widgets — por isso puxado pra frente (era 1º item do v3). `doc.Po
 
 | # | Item | Size | Escopo | Aceite |
 |---|------|:----:|--------|--------|
-| S0a | Seleção interna + copy/paste | M | Âncora de seleção no editor (range, não ponto); shift+setas / shift+word / shift+Home/End; delete de seleção via `DeleteRange`; register interno (yank/paste dentro do app). | teatest: shift+seta marca range; copy+paste round-trip via register; delete de seleção remove o range certo. |
-| S0b | Clipboard do SO | S/M | **OSC 52** (travado): cross-platform, zero-dep, funciona sobre SSH. Habilitar bracketed-paste (`main.go:56` hoje não liga). Register interno segue funcionando se OSC 52 for bloqueado. | manual/qa: copy num terminal com OSC 52 → cola noutro app; paste via bracketed-paste entra como texto, não comandos. |
+| S0a | Seleção interna + copy/paste | M | Âncora de seleção no editor (range, não ponto); shift+setas / shift+word / shift+Home/End; delete de seleção via `DeleteRange`; register interno (`^W` copy / `^X` cut / `^V` paste; `^C` continua quit). | teatest: shift+seta marca range; copy+paste round-trip via register; delete de seleção remove o range certo. |
+| S0b | Clipboard do SO | S/M | **OSC 52** no copy/cut; bracketed paste (default no bubbletea) insere literal. Register interno segue funcionando se OSC 52 for bloqueado. | copy → OSC 52; paste via bracketed-paste entra como texto, não comandos. |
 
 **Invariante:** seleção é estado do **editor**, não do `doc` — `doc` continua com
 `Position` ponto. Selection estende o modelo de cursor que lazy-raw e widgets herdam.

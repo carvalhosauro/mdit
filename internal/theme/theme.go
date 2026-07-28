@@ -18,6 +18,7 @@ type Theme struct {
 	Table, TableHeader                lipgloss.Style
 	Frontmatter, ThematicBreak        lipgloss.Style
 	Text, RawBlock                    lipgloss.Style // RawBlock: subtle bg on the raw block under the cursor
+	Selection                         lipgloss.Style // selected text in the editor (S0)
 	StatusBar, StatusBarError         lipgloss.Style
 
 	// Status bar segments: file name, dirty marker, key hints, transient
@@ -144,8 +145,9 @@ func fromPalette(p palette) Theme {
 		Frontmatter:   base.Foreground(p.overlay),
 		ThematicBreak: base.Foreground(p.surface2),
 
-		Text:     base.Foreground(p.text),
-		RawBlock: base.Background(p.surface),
+		Text:      base.Foreground(p.text),
+		RawBlock:  base.Background(p.surface),
+		Selection: base.Foreground(p.base).Background(p.blue),
 
 		StatusBar:      bar,
 		StatusBarError: base.Foreground(p.red).Background(p.surface),
