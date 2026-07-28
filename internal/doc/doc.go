@@ -214,8 +214,22 @@ func (d *Document) DeleteForward(p Position) Position {
 	return p
 }
 
+// TextRange returns the text in the half-open range [from, to). Endpoints are
+// clamped and order does not matter. An empty range yields "".
+func (d *Document) TextRange(from, to Position) string {
+	from = d.clamp(from)
+	to = d.clamp(to)
+	if to.Line < from.Line || (to.Line == from.Line && to.Col < from.Col) {
+		from, to = to, from
+	}
+	if from == to {
+		return ""
+	}
+	return d.textRange(from, to)
+}
+
 // textRange extracts the text in the half-open range [from, to), used for
-// undo bookkeeping before the range is removed.
+// undo bookkeeping before the range is removed. Callers must pass from ≤ to.
 func (d *Document) textRange(from, to Position) string {
 	if from.Line == to.Line {
 		r := []rune(d.lines[from.Line])

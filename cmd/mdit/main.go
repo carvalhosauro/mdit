@@ -54,6 +54,8 @@ func main() {
 	}()
 
 	p := tea.NewProgram(app, tea.WithAltScreen())
+	// Bracketed paste is enabled by default in bubbletea (S0b): pasted text
+	// arrives as a single KeyRunes{Paste:true} and is inserted literally.
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

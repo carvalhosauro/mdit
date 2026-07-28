@@ -29,6 +29,7 @@ Requires Go 1.26+. Single static binary (`CGO_ENABLED=0`), zero config.
 - **Obsidian-style wikilinks** — `[[note]]` / `[[note|alias]]` with follow (Ctrl+]), back (Ctrl+B), autocomplete on `[[`, and broken-link highlighting
 - **Fuzzy note finder** — Ctrl+P over the vault
 - **Zen mode** — Ctrl+E read-only, centered ≤80 columns
+- **Selection & clipboard** — shift-select, Ctrl+W/X/V copy/cut/paste (OSC 52), bracketed paste
 - **Safe save** — mtime conflict prompt (overwrite / reload / cancel); panic dumps to `<file>.mdit-recover`
 - **Undo / redo** — coalesced edits (Ctrl+Z / Ctrl+Y)
 
@@ -51,6 +52,11 @@ mdit --version
 | Ctrl+] | Follow wikilink under cursor |
 | Ctrl+B | Back (navigation history) |
 | Ctrl+Z / Ctrl+Y | Undo / Redo |
+| Shift+Arrows | Extend selection |
+| Ctrl+A | Select all |
+| Ctrl+W | Copy selection (OSC 52 + internal register) |
+| Ctrl+X | Cut selection |
+| Ctrl+V | Paste |
 | Arrows, PgUp/PgDn, Home/End | Navigate |
 | Ctrl+← / Ctrl+→ | Move by word |
 
