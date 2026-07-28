@@ -6,8 +6,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-const zenMaxWidth = 80
-
 func (a *App) enterZen() (tea.Model, tea.Cmd) {
 	a.zenSavedScroll = a.editor.Scroll()
 	a.editor.SetZen(true)
@@ -39,10 +37,9 @@ func (a *App) layoutZenEditor() {
 	if h < 1 {
 		h = 1
 	}
+	// Use the full terminal width so wide tables stay readable (#9). Prose still
+	// wraps via the renderer; the old 80-col clamp was what forced "…" truncation.
 	w := a.width
-	if w > zenMaxWidth {
-		w = zenMaxWidth
-	}
 	if w < 1 {
 		w = 1
 	}
@@ -83,10 +80,9 @@ func (a *App) handleZenKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (a *App) viewZen() string {
 	ed := a.editor.View()
 	bar := a.renderZenBar()
-	colW := a.width
-	if colW > zenMaxWidth {
-		colW = zenMaxWidth
-	}
+	// Prefer a centered reading column for narrow prose, but never narrower than
+	// the editor itself (which uses the full terminal so tables can breathe).
+	colW := a.editorWidth()
 	lines := strings.Split(ed, "\n")
 	padX := (a.width - colW) / 2
 	if padX < 0 {
@@ -106,6 +102,15 @@ func (a *App) viewZen() string {
 	}
 	b.WriteString(bar)
 	return b.String()
+}
+
+// editorWidth is the width the zen editor was laid out at (full terminal).
+func (a *App) editorWidth() int {
+	w := a.width
+	if w < 1 {
+		return 1
+	}
+	return w
 }
 
 // renderZenBar shows feedback (save flash, errors) whenever present; the zen

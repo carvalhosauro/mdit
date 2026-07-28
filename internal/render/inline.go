@@ -57,6 +57,8 @@ func styleInline(c ast.Node, source []byte, ctx Context) string {
 		return th.Link.Render(string(t.Label(source)))
 	case *east.Strikethrough:
 		return th.Strike.Render(renderInlines(t, source, ctx))
+	case *mdparse.Highlight:
+		return th.Highlight.Render(renderInlines(t, source, ctx))
 	case *mdparse.WikiLink:
 		if ctx.IsBroken != nil && ctx.IsBroken(t.Target) {
 			return th.BrokenLink.Render(t.Label())

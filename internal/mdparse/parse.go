@@ -78,7 +78,12 @@ var (
 // renderer can reuse it so inline parsing (including wikilinks) matches exactly.
 func Markdown() goldmark.Markdown {
 	mdOnce.Do(func() {
-		md = goldmark.New(goldmark.WithExtensions(extension.GFM, WikiLinkExt))
+		md = goldmark.New(goldmark.WithExtensions(
+			extension.GFM,
+			extension.Typographer,
+			WikiLinkExt,
+			HighlightExt,
+		))
 	})
 	return md
 }
