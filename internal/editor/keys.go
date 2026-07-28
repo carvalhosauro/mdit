@@ -10,61 +10,138 @@ import (
 )
 
 // handleKey dispatches a key message, mutating the model and returning it along
-// with any command (follow-link or autocomplete) the key produced.
+// with any command (follow-link, autocomplete, or OSC 52 clipboard) produced.
 func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if m.zen {
 		return m.handleZenKey(msg)
 	}
 	switch msg.Type {
 	case tea.KeyRunes:
+		// Bracketed paste arrives as one KeyRunes with Paste=true; insert the
+		// whole blob without firing wikilink autocomplete mid-paste.
+		if msg.Paste {
+			return m.insertPaste(string(msg.Runes))
+		}
 		return m.insertAndMaybeAutocomplete(string(msg.Runes))
 	case tea.KeySpace:
 		return m.insertAndMaybeAutocomplete(" ")
 	case tea.KeyEnter:
+		m.deleteSelection()
 		m.cursor = m.doc.Insert(m.cursor, "\n")
 		m.goalCol = m.cursor.Col
 		m.recompute()
 		return m, nil
 	case tea.KeyBackspace:
+		if m.deleteSelection() {
+			m.recompute()
+			return m, nil
+		}
 		m.cursor = m.doc.DeleteBackward(m.cursor)
 		m.goalCol = m.cursor.Col
 		m.recompute()
 		return m, nil
 	case tea.KeyDelete:
+		if m.deleteSelection() {
+			m.recompute()
+			return m, nil
+		}
 		m.cursor = m.doc.DeleteForward(m.cursor)
 		m.goalCol = m.cursor.Col
 		m.recompute()
 		return m, nil
 
+	// --- motion (clears selection) ---
 	case tea.KeyUp:
+		m.clearSelection()
 		m.moveVertical(-1)
 	case tea.KeyDown:
+		m.clearSelection()
 		m.moveVertical(1)
 	case tea.KeyLeft:
+		m.clearSelection()
 		m.moveLeft()
 	case tea.KeyRight:
+		m.clearSelection()
 		m.moveRight()
 	case tea.KeyCtrlLeft:
+		m.clearSelection()
 		m.moveWordLeft()
 	case tea.KeyCtrlRight:
+		m.clearSelection()
 		m.moveWordRight()
 	case tea.KeyHome:
+		m.clearSelection()
 		m.cursor.Col = 0
 		m.goalCol = 0
 	case tea.KeyEnd:
+		m.clearSelection()
 		m.cursor.Col = runeLen(m.doc.Line(m.cursor.Line))
 		m.goalCol = m.cursor.Col
 	case tea.KeyPgUp:
+		m.clearSelection()
 		m.movePage(-1)
 	case tea.KeyPgDown:
+		m.clearSelection()
 		m.movePage(1)
 
+	// --- selection extend (shift + motion) ---
+	case tea.KeyShiftUp:
+		m.beginExtend()
+		m.moveVertical(-1)
+	case tea.KeyShiftDown:
+		m.beginExtend()
+		m.moveVertical(1)
+	case tea.KeyShiftLeft:
+		m.beginExtend()
+		m.moveLeft()
+	case tea.KeyShiftRight:
+		m.beginExtend()
+		m.moveRight()
+	case tea.KeyCtrlShiftLeft:
+		m.beginExtend()
+		m.moveWordLeft()
+	case tea.KeyCtrlShiftRight:
+		m.beginExtend()
+		m.moveWordRight()
+	case tea.KeyShiftHome:
+		m.beginExtend()
+		m.cursor.Col = 0
+		m.goalCol = 0
+	case tea.KeyShiftEnd:
+		m.beginExtend()
+		m.cursor.Col = runeLen(m.doc.Line(m.cursor.Line))
+		m.goalCol = m.cursor.Col
+
+	// --- clipboard / register (S0) ---
+	case tea.KeyCtrlA:
+		m.selectAll()
+	case tea.KeyCtrlW: // copy (^C is quit at the App layer)
+		text := m.yankSelection()
+		m.recompute()
+		return m, copyOSC52(text)
+	case tea.KeyCtrlX: // cut
+		text := m.yankSelection()
+		m.deleteSelection()
+		m.recompute()
+		return m, copyOSC52(text)
+	case tea.KeyCtrlV: // paste from internal register
+		if m.register == "" {
+			return m, nil
+		}
+		m.deleteSelection()
+		m.cursor = m.doc.Insert(m.cursor, m.register)
+		m.goalCol = m.cursor.Col
+		m.recompute()
+		return m, nil
+
 	case tea.KeyCtrlZ:
+		m.clearSelection()
 		if pos, ok := m.doc.Undo(); ok {
 			m.cursor = pos
 			m.goalCol = pos.Col
 		}
 	case tea.KeyCtrlY:
+		m.clearSelection()
 		if pos, ok := m.doc.Redo(); ok {
 			m.cursor = pos
 			m.goalCol = pos.Col
@@ -93,6 +170,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 
 	m.recompute()
 	return m, nil
+}
+
+func (m *Model) selectAll() {
+	m.selOn = true
+	m.selAnchor = doc.Position{Line: 0, Col: 0}
+	last := m.doc.LineCount() - 1
+	m.cursor = doc.Position{Line: last, Col: runeLen(m.doc.Line(last))}
+	m.goalCol = m.cursor.Col
 }
 
 // handleZenKey scrolls the viewport only; editing is ignored. Cursor is left
@@ -128,15 +213,25 @@ func (m Model) handleZenKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// insertAndMaybeAutocomplete inserts s at the cursor and, if that just completed
-// a "[[" trigger, returns an AutocompleteMsg command.
+// insertAndMaybeAutocomplete inserts s at the cursor (replacing any selection)
+// and, if that just completed a "[[" trigger, returns an AutocompleteMsg command.
 func (m Model) insertAndMaybeAutocomplete(s string) (Model, tea.Cmd) {
+	m.deleteSelection()
 	m.cursor = m.doc.Insert(m.cursor, s)
 	m.goalCol = m.cursor.Col
 	m.recompute()
 	if cmd := m.autocompleteCmd(); cmd != nil {
 		return m, cmd
 	}
+	return m, nil
+}
+
+// insertPaste inserts a bracketed-paste blob as literal text (no autocomplete).
+func (m Model) insertPaste(s string) (Model, tea.Cmd) {
+	m.deleteSelection()
+	m.cursor = m.doc.Insert(m.cursor, s)
+	m.goalCol = m.cursor.Col
+	m.recompute()
 	return m, nil
 }
 
@@ -259,6 +354,7 @@ func (m *Model) moveWordRight() {
 func (m *Model) cursorTo(p doc.Position) {
 	m.cursor = p
 	m.goalCol = p.Col
+	m.clearSelection()
 	m.recompute()
 }
 
