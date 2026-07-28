@@ -41,7 +41,7 @@ se cruzam**:
 **Track A — modelo de cursor/edição** (sequencial; cada etapa constrói sobre a
 anterior, todas tocam `doc.Position`/cursor/`DeleteRange`/seam de edição):
 ```
-M0 ✅  →  v2 Polish ✅  →  S0 Selection/clipboard ✅  →  Lazy-raw (bridge)  →  v3 Structured editing
+M0 ✅  →  v2 Polish ✅  →  S0 Selection/clipboard ✅  →  Lazy-raw (bridge) ✅  →  v3 Structured editing
 ```
 
 **Track B — render/parse** (ortogonal; interleava a qualquer momento, até em paralelo):
@@ -154,7 +154,7 @@ do lazy-raw/widgets — por isso puxado pra frente (era 1º item do v3). `doc.Po
 
 ---
 
-## Lazy-raw (Track A — bridge p/ v3)
+## Lazy-raw (Track A — bridge p/ v3) ✅
 
 **Meta (ponto 1 travado):** bloco estrutural não vira cru só por ter cursor dentro —
 fica renderizado até intenção de editar. É o gate de ativação que o v3 reusa.

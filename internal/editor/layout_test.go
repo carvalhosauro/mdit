@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
@@ -93,19 +94,33 @@ func TestLayout_NonCursorBlocksRendered(t *testing.T) {
 	}
 }
 
-func TestLayout_TableFullyRawWhenCursorInAnyRow(t *testing.T) {
+func TestLayout_TableLazyRawUntilEdit(t *testing.T) {
 	for _, line := range []int{3, 4, 5} {
 		m := newFixture(t)
 		m.cursorTo(doc.Position{Line: line, Col: 0})
 		tb := m.testBlockForLine(line)
-		if !m.layouts[tb].raw {
-			t.Fatalf("table block should be raw when cursor at line %d", line)
+		if m.layouts[tb].raw {
+			t.Fatalf("table should stay rendered at line %d until edit intent", line)
 		}
 		got := joinStrip(m.layouts[tb].lines)
-		for _, want := range []string{"| A | B |", "| - | - |", "| 1 | 2 |"} {
-			if !strings.Contains(got, want) {
-				t.Fatalf("raw table (cursor line %d) missing %q, got %q", line, want, got)
-			}
+		if !strings.Contains(got, "┼") {
+			t.Fatalf("rendered table (cursor line %d) missing box separator, got %q", line, got)
+		}
+	}
+}
+
+func TestLayout_TableRawAfterEnter(t *testing.T) {
+	m := newFixture(t)
+	m.cursorTo(doc.Position{Line: 4, Col: 0})
+	m, _ = key(m, typeKey(tea.KeyEnter))
+	tb := m.testBlockForLine(4)
+	if !m.layouts[tb].raw {
+		t.Fatal("table should be raw after Enter")
+	}
+	got := joinStrip(m.layouts[tb].lines)
+	for _, want := range []string{"| A | B |", "| - | - |", "| 1 | 2 |"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("raw table missing %q, got %q", want, got)
 		}
 	}
 }

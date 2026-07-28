@@ -39,6 +39,7 @@ type Model struct {
 	goalCol int  // remembered target column for vertical (up/down) motion
 	scroll  int  // top screen row of the viewport
 	zen     bool // when true, all blocks are rendered (no raw cursor block)
+	editing bool // lazy-raw: structural cursor block shown raw only while true
 
 	// Selection is editor state (not doc): selOn+selAnchor with cursor as the
 	// other end. register is the internal yank/paste buffer (S0).
@@ -100,6 +101,7 @@ func (m *Model) SetDoc(d *doc.Document) {
 	m.goalCol = 0
 	m.scroll = 0
 	m.clearSelection()
+	m.editing = false
 	m.blocks = nil
 	m.layouts = nil
 	m.prefix = nil
@@ -180,7 +182,7 @@ func (m Model) View() string {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		if !m.zen && sr == curRow {
+		if !m.zen && sr == curRow && m.cursorBlockRaw() {
 			b.WriteString(m.renderCursorRow())
 			continue
 		}

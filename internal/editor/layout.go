@@ -84,13 +84,20 @@ func (m *Model) recompute() {
 	}
 
 	m.normalizeCursor()
+	prevBlock := m.cursorBlock
 	m.cursorBlock = blockIndexForLine(m.blocks, m.cursor.Line)
+	if m.cursorBlock != prevBlock {
+		// Leaving a block drops lazy-raw editing; re-entering starts rendered.
+		m.editing = false
+	}
 
 	m.layouts = make([]blockLayout, len(m.blocks))
 	m.prefix = make([]int, len(m.blocks)+1)
 	for i := range m.blocks {
 		var lines []string
-		raw := !m.zen && i == m.cursorBlock
+		// Lazy-raw (L1): structural kinds stay rendered under the cursor until
+		// editing is armed; textual kinds stay eager-raw (WYSIWYG).
+		raw := !m.zen && i == m.cursorBlock && (!isStructural(m.blocks[i].Kind) || m.editing)
 		if raw {
 			lines = m.rawBlockLines(i)
 		} else {
@@ -219,6 +226,13 @@ func (m Model) cursorLocation() (screenRow int, wr wrapRow, idxInRow int, cellCo
 	w := m.effWidth()
 	cb := m.cursorBlock
 	b := m.blocks[cb]
+
+	// Structural block still rendered (lazy-raw): map the cursor to the top of
+	// the block's screen region. Heights come from the rendered layout, not raw
+	// wraps, so a precise cell mapping is not available until editing activates.
+	if cb < len(m.layouts) && !m.layouts[cb].raw {
+		return m.prefix[cb], wrapRow{}, 0, 0
+	}
 
 	rowInBlock := 0
 	for ln := b.Start; ln < m.cursor.Line; ln++ {
