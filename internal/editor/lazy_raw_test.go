@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/carvalhosauro/mdit/internal/doc"
 )
@@ -95,5 +96,26 @@ func TestLazyRaw_CodeFenceLazy(t *testing.T) {
 	m, _ = key(m, typeKey(tea.KeyEnter))
 	if !m.layouts[cb].raw {
 		t.Fatal("Enter should activate raw on code fence")
+	}
+}
+
+func TestLazyRaw_CursorTracksRenderedTableRows(t *testing.T) {
+	m := newFixture(t)
+	m.SetSize(40, 12)
+	m.cursorTo(doc.Position{Line: 3, Col: 2})
+	rowTop, _ := m.cursorScreenRowCol()
+	v := m.View()
+	if !strings.Contains(ansi.Strip(v), "A") {
+		t.Fatalf("view should still show rendered table text, got %q", ansi.Strip(v))
+	}
+	// Focus row must carry a reverse caret (lipgloss Reverse → ANSI).
+	if !strings.Contains(v, "\x1b[7m") && !strings.Contains(v, "\x1b[7;") {
+		t.Fatalf("expected reverse-video caret on rendered structural focus, view=%q", v)
+	}
+
+	m.cursorTo(doc.Position{Line: 5, Col: 2})
+	rowBottom, _ := m.cursorScreenRowCol()
+	if rowBottom <= rowTop {
+		t.Fatalf("cursor row should advance with table source lines: top=%d bottom=%d", rowTop, rowBottom)
 	}
 }

@@ -227,11 +227,30 @@ func (m Model) cursorLocation() (screenRow int, wr wrapRow, idxInRow int, cellCo
 	cb := m.cursorBlock
 	b := m.blocks[cb]
 
-	// Structural block still rendered (lazy-raw): map the cursor to the top of
-	// the block's screen region. Heights come from the rendered layout, not raw
-	// wraps, so a precise cell mapping is not available until editing activates.
+	// Structural block still rendered (lazy-raw): map the source line onto a
+	// row inside the rendered layout so the caret can track as the user arrows
+	// through the table/code block.
 	if cb < len(m.layouts) && !m.layouts[cb].raw {
-		return m.prefix[cb], wrapRow{}, 0, 0
+		h := m.layouts[cb].height
+		if h < 1 {
+			h = 1
+		}
+		srcSpan := b.End - b.Start + 1
+		if srcSpan < 1 {
+			srcSpan = 1
+		}
+		off := m.cursor.Line - b.Start
+		if off < 0 {
+			off = 0
+		}
+		rowInBlock := off
+		if srcSpan != h {
+			rowInBlock = off * h / srcSpan
+		}
+		if rowInBlock >= h {
+			rowInBlock = h - 1
+		}
+		return m.prefix[cb] + rowInBlock, wrapRow{}, 0, m.cursor.Col
 	}
 
 	rowInBlock := 0
