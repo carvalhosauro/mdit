@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/carvalhosauro/mdit/internal/doc"
 	"github.com/carvalhosauro/mdit/internal/mdparse"
@@ -39,6 +40,13 @@ type Model struct {
 	goalCol int  // remembered target column for vertical (up/down) motion
 	scroll  int  // top screen row of the viewport
 	zen     bool // when true, all blocks are rendered (no raw cursor block)
+	editing bool // lazy-raw: structural cursor block shown raw only while true
+
+	// Selection is editor state (not doc): selOn+selAnchor with cursor as the
+	// other end. register is the internal yank/paste buffer (S0).
+	selOn     bool
+	selAnchor doc.Position
+	register  string
 
 	// layout state, rebuilt by recompute.
 	result        mdparse.Result
@@ -87,12 +95,14 @@ func (m Model) Cursor() doc.Position { return m.cursor }
 // Doc returns the underlying document.
 func (m Model) Doc() *doc.Document { return m.doc }
 
-// SetDoc swaps the document and resets cursor, scroll, and all layout history.
+// SetDoc swaps the document and resets cursor, scroll, selection, and layout.
 func (m *Model) SetDoc(d *doc.Document) {
 	m.doc = d
 	m.cursor = doc.Position{}
 	m.goalCol = 0
 	m.scroll = 0
+	m.clearSelection()
+	m.editing = false
 	m.blocks = nil
 	m.layouts = nil
 	m.prefix = nil
@@ -108,8 +118,9 @@ func (m *Model) SetCursor(p doc.Position) {
 	m.recompute()
 }
 
-// InsertText inserts s at the cursor and rebuilds layout.
+// InsertText inserts s at the cursor (replacing any selection) and rebuilds layout.
 func (m *Model) InsertText(s string) {
+	m.deleteSelection()
 	m.cursor = m.doc.Insert(m.cursor, s)
 	m.goalCol = m.cursor.Col
 	m.recompute()
@@ -159,7 +170,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 }
 
 // View renders exactly height screen lines joined by "\n", drawing the cursor by
-// inverting the cell it occupies.
+// inverting the cell it occupies (raw block) or a focus caret on the mapped row
+// of a lazy-rendered structural block.
 func (m Model) View() string {
 	if m.height < 1 {
 		return ""
@@ -173,7 +185,13 @@ func (m Model) View() string {
 			b.WriteByte('\n')
 		}
 		if !m.zen && sr == curRow {
-			b.WriteString(m.renderCursorRow())
+			if m.cursorBlockRaw() {
+				b.WriteString(m.renderCursorRow())
+			} else {
+				// Lazy-raw structural: keep content readable but show a caret so
+				// the user can see which row they're on.
+				b.WriteString(m.renderLazyFocusRow(sr))
+			}
 			continue
 		}
 		b.WriteString(m.screenLine(sr))
@@ -182,9 +200,9 @@ func (m Model) View() string {
 }
 
 // renderCursorRow rebuilds the cursor's screen row from raw text, styling the
-// cell under the cursor with a reversed RawBlock style. The cursor block is
-// always raw, so its row is a plain (single-style) segment and cell inversion is
-// exact without ANSI surgery.
+// cell under the cursor with a reversed RawBlock style and painting any active
+// selection with theme.Selection. The cursor block is always raw, so cells are
+// plain (single-style) segments and inversion is exact without ANSI surgery.
 func (m Model) renderCursorRow() string {
 	// P3: an empty buffer shows a dim placeholder after the cursor, so a fresh
 	// note isn't a blank void. It vanishes on the first character typed.
@@ -195,14 +213,72 @@ func (m Model) renderCursorRow() string {
 	_, wr, idx, _ := m.cursorLocation()
 	style := m.theme.RawBlock
 	rev := style.Reverse(true)
+	selStyle := m.theme.Selection
 
 	runes := []rune(wr.text)
-	if idx >= len(runes) {
-		// Cursor at end of the row: a trailing reversed space marks it.
-		return style.Render(string(runes)) + rev.Render(" ")
+	selFrom, selTo, hasSel := m.Selection()
+	line := m.cursor.Line
+
+	var b strings.Builder
+	for i := 0; i <= len(runes); i++ {
+		pos := doc.Position{Line: line, Col: wr.startCol + i}
+		inSel := hasSel && posInRange(pos, selFrom, selTo)
+		if i == len(runes) {
+			if i == idx {
+				b.WriteString(rev.Render(" "))
+			}
+			break
+		}
+		cell := string(runes[i])
+		switch {
+		case i == idx:
+			b.WriteString(rev.Render(cell))
+		case inSel:
+			b.WriteString(selStyle.Render(cell))
+		default:
+			b.WriteString(style.Render(cell))
+		}
 	}
-	left := string(runes[:idx])
-	cur := string(runes[idx])
-	right := string(runes[idx+1:])
-	return style.Render(left) + rev.Render(cur) + style.Render(right)
+	return b.String()
+}
+
+// renderLazyFocusRow paints a visible caret on a rendered (non-raw) structural
+// block under the cursor. The row is restyled from stripped text so the caret
+// position is exact; the rest of the row keeps a subtle RawBlock background so
+// the focused line stands out while the table/code content stays readable.
+func (m Model) renderLazyFocusRow(sr int) string {
+	plain := ansi.Strip(m.screenLine(sr))
+	runes := []rune(plain)
+	_, _, _, cellCol := m.cursorLocation()
+	col := cellCol
+	if col < 0 {
+		col = 0
+	}
+	if col > len(runes) {
+		col = len(runes)
+	}
+
+	style := m.theme.RawBlock
+	rev := style.Reverse(true)
+
+	if len(runes) == 0 {
+		return rev.Render(" ")
+	}
+
+	var b strings.Builder
+	for i := 0; i <= len(runes); i++ {
+		if i == len(runes) {
+			if i == col {
+				b.WriteString(rev.Render(" "))
+			}
+			break
+		}
+		cell := string(runes[i])
+		if i == col {
+			b.WriteString(rev.Render(cell))
+		} else {
+			b.WriteString(style.Render(cell))
+		}
+	}
+	return b.String()
 }

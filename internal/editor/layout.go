@@ -84,13 +84,20 @@ func (m *Model) recompute() {
 	}
 
 	m.normalizeCursor()
+	prevBlock := m.cursorBlock
 	m.cursorBlock = blockIndexForLine(m.blocks, m.cursor.Line)
+	if m.cursorBlock != prevBlock {
+		// Leaving a block drops lazy-raw editing; re-entering starts rendered.
+		m.editing = false
+	}
 
 	m.layouts = make([]blockLayout, len(m.blocks))
 	m.prefix = make([]int, len(m.blocks)+1)
 	for i := range m.blocks {
 		var lines []string
-		raw := !m.zen && i == m.cursorBlock
+		// Lazy-raw (L1): structural kinds stay rendered under the cursor until
+		// editing is armed; textual kinds stay eager-raw (WYSIWYG).
+		raw := !m.zen && i == m.cursorBlock && (!isStructural(m.blocks[i].Kind) || m.editing)
 		if raw {
 			lines = m.rawBlockLines(i)
 		} else {
@@ -219,6 +226,32 @@ func (m Model) cursorLocation() (screenRow int, wr wrapRow, idxInRow int, cellCo
 	w := m.effWidth()
 	cb := m.cursorBlock
 	b := m.blocks[cb]
+
+	// Structural block still rendered (lazy-raw): map the source line onto a
+	// row inside the rendered layout so the caret can track as the user arrows
+	// through the table/code block.
+	if cb < len(m.layouts) && !m.layouts[cb].raw {
+		h := m.layouts[cb].height
+		if h < 1 {
+			h = 1
+		}
+		srcSpan := b.End - b.Start + 1
+		if srcSpan < 1 {
+			srcSpan = 1
+		}
+		off := m.cursor.Line - b.Start
+		if off < 0 {
+			off = 0
+		}
+		rowInBlock := off
+		if srcSpan != h {
+			rowInBlock = off * h / srcSpan
+		}
+		if rowInBlock >= h {
+			rowInBlock = h - 1
+		}
+		return m.prefix[cb] + rowInBlock, wrapRow{}, 0, m.cursor.Col
+	}
 
 	rowInBlock := 0
 	for ln := b.Start; ln < m.cursor.Line; ln++ {
