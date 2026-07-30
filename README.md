@@ -28,8 +28,9 @@ Requires Go 1.26+. Single static binary (`CGO_ENABLED=0`), zero config.
 - **Live inline render** — headings, lists, code, quotes styled in place; the block under the cursor stays raw for editing
 - **Obsidian-style wikilinks** — `[[note]]` / `[[note|alias]]` with follow (Ctrl+]), back (Ctrl+B), autocomplete on `[[`, and broken-link highlighting
 - **Fuzzy note finder** — Ctrl+P over the vault
-- **Zen mode** — Ctrl+E read-only, centered ≤80 columns
+- **Zen mode** — Ctrl+E read-only; tables use full terminal width (no cell ellipsis)
 - **Selection & clipboard** — shift-select, Ctrl+W/X/V copy/cut/paste (OSC 52), bracketed paste
+- **Obsidian extras** — callouts (`> [!warning]`), `==highlight==`, typographic quotes (render-only)
 - **Safe save** — mtime conflict prompt (overwrite / reload / cancel); panic dumps to `<file>.mdit-recover`
 - **Undo / redo** — coalesced edits (Ctrl+Z / Ctrl+Y)
 

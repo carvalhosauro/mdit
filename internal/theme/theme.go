@@ -10,16 +10,17 @@ import "github.com/charmbracelet/lipgloss"
 // Theme holds one lipgloss.Style per renderable markdown construct. All fields
 // are value types, so a Theme is cheap to copy into a render.Context.
 type Theme struct {
-	H1, H2, H3, H4, H5, H6            lipgloss.Style
-	Bold, Italic, CodeSpan, Strike    lipgloss.Style
-	CodeBlock, CodeBlockBorder        lipgloss.Style
-	Link, WikiLink, BrokenLink        lipgloss.Style // BrokenLink: red fg
-	Quote, Bullet, TaskDone, TaskOpen lipgloss.Style
-	Table, TableHeader                lipgloss.Style
-	Frontmatter, ThematicBreak        lipgloss.Style
-	Text, RawBlock                    lipgloss.Style // RawBlock: subtle bg on the raw block under the cursor
-	Selection                         lipgloss.Style // selected text in the editor (S0)
-	StatusBar, StatusBarError         lipgloss.Style
+	H1, H2, H3, H4, H5, H6                    lipgloss.Style
+	Bold, Italic, CodeSpan, Strike, Highlight lipgloss.Style
+	CodeBlock, CodeBlockBorder                lipgloss.Style
+	Link, WikiLink, BrokenLink                lipgloss.Style // BrokenLink: red fg
+	Quote, Callout, CalloutTitle              lipgloss.Style
+	Bullet, TaskDone, TaskOpen                lipgloss.Style
+	Table, TableHeader                        lipgloss.Style
+	Frontmatter, ThematicBreak                lipgloss.Style
+	Text, RawBlock                            lipgloss.Style // RawBlock: subtle bg on the raw block under the cursor
+	Selection                                 lipgloss.Style // selected text in the editor (S0)
+	StatusBar, StatusBarError                 lipgloss.Style
 
 	// Status bar segments: file name, dirty marker, key hints, transient
 	// success flash. All share the StatusBar background.
@@ -120,10 +121,11 @@ func fromPalette(p palette) Theme {
 		H5: base.Bold(true).Foreground(p.green),
 		H6: base.Bold(true).Foreground(p.yellow),
 
-		Bold:     base.Bold(true),
-		Italic:   base.Italic(true),
-		CodeSpan: base.Foreground(p.peach).Background(p.surface),
-		Strike:   base.Strikethrough(true).Foreground(p.overlay),
+		Bold:      base.Bold(true),
+		Italic:    base.Italic(true),
+		CodeSpan:  base.Foreground(p.peach).Background(p.surface),
+		Strike:    base.Strikethrough(true).Foreground(p.overlay),
+		Highlight: base.Foreground(p.base).Background(p.yellow),
 
 		CodeBlock:       base.Foreground(p.text),
 		CodeBlockBorder: base.Foreground(p.surface2),
@@ -134,7 +136,10 @@ func fromPalette(p palette) Theme {
 		WikiLink:   base.Bold(true).Foreground(p.sky),
 		BrokenLink: base.Underline(true).Foreground(p.red),
 
-		Quote:    base.Italic(true).Foreground(p.subtext),
+		Quote:        base.Italic(true).Foreground(p.subtext),
+		Callout:      base.Foreground(p.text),
+		CalloutTitle: base.Bold(true).Foreground(p.peach),
+
 		Bullet:   base.Foreground(p.blue),
 		TaskDone: base.Foreground(p.green),
 		TaskOpen: base.Foreground(p.yellow),

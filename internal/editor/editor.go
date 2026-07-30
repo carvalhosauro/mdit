@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/carvalhosauro/mdit/internal/doc"
 	"github.com/carvalhosauro/mdit/internal/mdparse"
@@ -39,6 +40,7 @@ type Model struct {
 	goalCol int  // remembered target column for vertical (up/down) motion
 	scroll  int  // top screen row of the viewport
 	zen     bool // when true, all blocks are rendered (no raw cursor block)
+	editing bool // lazy-raw: structural cursor block shown raw only while true
 
 	// Selection is editor state (not doc): selOn+selAnchor with cursor as the
 	// other end. register is the internal yank/paste buffer (S0).
@@ -100,6 +102,7 @@ func (m *Model) SetDoc(d *doc.Document) {
 	m.goalCol = 0
 	m.scroll = 0
 	m.clearSelection()
+	m.editing = false
 	m.blocks = nil
 	m.layouts = nil
 	m.prefix = nil
@@ -167,7 +170,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 }
 
 // View renders exactly height screen lines joined by "\n", drawing the cursor by
-// inverting the cell it occupies.
+// inverting the cell it occupies (raw block) or a focus caret on the mapped row
+// of a lazy-rendered structural block.
 func (m Model) View() string {
 	if m.height < 1 {
 		return ""
@@ -181,7 +185,13 @@ func (m Model) View() string {
 			b.WriteByte('\n')
 		}
 		if !m.zen && sr == curRow {
-			b.WriteString(m.renderCursorRow())
+			if m.cursorBlockRaw() {
+				b.WriteString(m.renderCursorRow())
+			} else {
+				// Lazy-raw structural: keep content readable but show a caret so
+				// the user can see which row they're on.
+				b.WriteString(m.renderLazyFocusRow(sr))
+			}
 			continue
 		}
 		b.WriteString(m.screenLine(sr))
@@ -226,6 +236,47 @@ func (m Model) renderCursorRow() string {
 		case inSel:
 			b.WriteString(selStyle.Render(cell))
 		default:
+			b.WriteString(style.Render(cell))
+		}
+	}
+	return b.String()
+}
+
+// renderLazyFocusRow paints a visible caret on a rendered (non-raw) structural
+// block under the cursor. The row is restyled from stripped text so the caret
+// position is exact; the rest of the row keeps a subtle RawBlock background so
+// the focused line stands out while the table/code content stays readable.
+func (m Model) renderLazyFocusRow(sr int) string {
+	plain := ansi.Strip(m.screenLine(sr))
+	runes := []rune(plain)
+	_, _, _, cellCol := m.cursorLocation()
+	col := cellCol
+	if col < 0 {
+		col = 0
+	}
+	if col > len(runes) {
+		col = len(runes)
+	}
+
+	style := m.theme.RawBlock
+	rev := style.Reverse(true)
+
+	if len(runes) == 0 {
+		return rev.Render(" ")
+	}
+
+	var b strings.Builder
+	for i := 0; i <= len(runes); i++ {
+		if i == len(runes) {
+			if i == col {
+				b.WriteString(rev.Render(" "))
+			}
+			break
+		}
+		cell := string(runes[i])
+		if i == col {
+			b.WriteString(rev.Render(cell))
+		} else {
 			b.WriteString(style.Render(cell))
 		}
 	}

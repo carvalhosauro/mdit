@@ -31,6 +31,7 @@ var bindings = []keyBinding{
 	{types: []tea.KeyType{tea.KeyCtrlW}, hint: "^W", desc: "copy selection"},
 	{types: []tea.KeyType{tea.KeyCtrlX}, hint: "^X", desc: "cut selection"},
 	{types: []tea.KeyType{tea.KeyCtrlV}, hint: "^V", desc: "paste"},
+	{hint: "Enter / Esc", desc: "edit / leave table & code block"},
 	{hint: "[[", desc: "wikilink autocomplete"},
 	{hint: "^Z / ^Y", desc: "undo / redo"},
 	{types: []tea.KeyType{tea.KeyCtrlG}, hint: "^G", desc: "this help", barLabel: "help", run: (*App).cmdHelp},

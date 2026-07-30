@@ -26,10 +26,24 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case tea.KeySpace:
 		return m.insertAndMaybeAutocomplete(" ")
 	case tea.KeyEnter:
+		// Lazy-raw: Enter on a structural block arms editing without inserting.
+		if m.shouldLazyActivate() {
+			m.activateEditing()
+			m.recompute()
+			return m, nil
+		}
 		m.deleteSelection()
 		m.cursor = m.doc.Insert(m.cursor, "\n")
 		m.goalCol = m.cursor.Col
 		m.recompute()
+		return m, nil
+	case tea.KeyEscape:
+		if m.editing {
+			m.editing = false
+			m.clearSelection()
+			m.recompute()
+			return m, nil
+		}
 		return m, nil
 	case tea.KeyBackspace:
 		if m.deleteSelection() {
@@ -216,6 +230,9 @@ func (m Model) handleZenKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 // insertAndMaybeAutocomplete inserts s at the cursor (replacing any selection)
 // and, if that just completed a "[[" trigger, returns an AutocompleteMsg command.
 func (m Model) insertAndMaybeAutocomplete(s string) (Model, tea.Cmd) {
+	if m.shouldLazyActivate() {
+		m.activateEditing()
+	}
 	m.deleteSelection()
 	m.cursor = m.doc.Insert(m.cursor, s)
 	m.goalCol = m.cursor.Col
@@ -228,6 +245,9 @@ func (m Model) insertAndMaybeAutocomplete(s string) (Model, tea.Cmd) {
 
 // insertPaste inserts a bracketed-paste blob as literal text (no autocomplete).
 func (m Model) insertPaste(s string) (Model, tea.Cmd) {
+	if m.shouldLazyActivate() {
+		m.activateEditing()
+	}
 	m.deleteSelection()
 	m.cursor = m.doc.Insert(m.cursor, s)
 	m.goalCol = m.cursor.Col

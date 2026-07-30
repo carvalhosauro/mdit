@@ -160,11 +160,15 @@ func TestKeys_TableGoesRawOnEnterAndRendersOnExit(t *testing.T) {
 	if m.layouts[tb].raw {
 		t.Fatalf("table should render when cursor outside")
 	}
-	// Enter the table (line 3).
+	// Enter the table (line 3) — still rendered (lazy-raw).
 	m.cursorTo(doc.Position{Line: 3, Col: 0})
 	tb = m.testBlockForLine(3)
+	if m.layouts[tb].raw {
+		t.Fatalf("table should stay rendered until edit intent")
+	}
+	m, _ = key(m, typeKey(tea.KeyEnter))
 	if !m.layouts[tb].raw {
-		t.Fatalf("table should be raw when cursor enters it")
+		t.Fatalf("table should be raw after Enter")
 	}
 	got := joinStrip(m.layouts[tb].lines)
 	if !strings.Contains(got, "| 1 | 2 |") {
