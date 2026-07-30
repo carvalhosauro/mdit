@@ -152,6 +152,69 @@ func (d *Document) clamp(p Position) Position {
 	return p
 }
 
+// ReplaceLines replaces the inclusive line range [start, end] with lines.
+// len(lines) may differ from end-start+1. A nil lines slice is treated as
+// empty (deletes the range). Records a single non-coalescible undo patch and
+// bumps Version once. start/end are clamped; out-of-range values never panic.
+// Returns the cursor at the start of the first inserted line (Col 0), or the
+// clamped position where the deleted range began.
+func (d *Document) ReplaceLines(start, end int, lines []string) Position {
+	if len(d.lines) == 0 {
+		d.lines = []string{""}
+	}
+	maxLine := len(d.lines) - 1
+	if start < 0 {
+		start = 0
+	} else if start > maxLine {
+		start = maxLine
+	}
+	if end < 0 {
+		end = 0
+	} else if end > maxLine {
+		end = maxLine
+	}
+	if end < start {
+		start, end = end, start
+	}
+	if lines == nil {
+		lines = []string{}
+	}
+
+	from := Position{Line: start, Col: 0}
+	var to Position
+	var oldText, newText string
+
+	if end < maxLine {
+		// Include the trailing newline after the last replaced line so an
+		// empty replacement cleanly removes the range.
+		to = Position{Line: end + 1, Col: 0}
+		oldText = d.textRange(from, to)
+		if len(lines) == 0 {
+			newText = ""
+		} else {
+			newText = strings.Join(lines, "\n") + "\n"
+		}
+	} else if start > 0 && len(lines) == 0 {
+		// Deleting through the end of the document: drop the newline before
+		// start so we do not leave a trailing empty line.
+		prevLen := utf8.RuneCountInString(d.lines[start-1])
+		from = Position{Line: start - 1, Col: prevLen}
+		to = Position{Line: end, Col: utf8.RuneCountInString(d.lines[end])}
+		oldText = d.textRange(from, to)
+		newText = ""
+	} else {
+		to = Position{Line: end, Col: utf8.RuneCountInString(d.lines[end])}
+		oldText = d.textRange(from, to)
+		newText = strings.Join(lines, "\n")
+	}
+
+	cursorBefore := Position{Line: start, Col: 0}
+	d.applyReplace(from, to, newText)
+	// Force a non-coalescible undo group (multi-line / structural rewrite).
+	d.recordEditNonCoalesce(from, oldText, newText, cursorBefore, Position{Line: start, Col: 0})
+	return d.clamp(Position{Line: start, Col: 0})
+}
+
 // Insert inserts text (which may contain "\n") at p and returns the cursor
 // position immediately after the inserted text.
 func (d *Document) Insert(p Position, text string) Position {
