@@ -181,6 +181,23 @@ func TestTableWidget_TypingDoesNotBumpVersionUntilCommit(t *testing.T) {
 	}
 }
 
+func TestTableWidget_BlockEditHint(t *testing.T) {
+	m := newFixture(t)
+	if m.BlockEditHint() != "" {
+		t.Fatalf("hint should be empty without widget, got %q", m.BlockEditHint())
+	}
+	m.cursorTo(doc.Position{Line: 3, Col: 0})
+	m, _ = key(m, typeKey(tea.KeyEnter))
+	h := m.BlockEditHint()
+	if !strings.Contains(h, "table") || !strings.Contains(h, "esc cancel") {
+		t.Fatalf("hint=%q", h)
+	}
+	m, _ = key(m, typeKey(tea.KeyEscape))
+	if m.BlockEditHint() != "" {
+		t.Fatalf("hint should clear after Esc, got %q", m.BlockEditHint())
+	}
+}
+
 func TestTableWidget_MalformedFallsBackToRaw(t *testing.T) {
 	prev := openTableFn
 	openTableFn = func([]string, doc.Position, int) (blockedit.Widget, bool) {

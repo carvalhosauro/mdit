@@ -8,7 +8,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 	"github.com/muesli/reflow/wordwrap"
-	"github.com/muesli/termenv"
 )
 
 func (w *tableWidget) rowCount() int {
@@ -280,9 +279,6 @@ func removeAlignAt(a []Align, i int) []Align {
 }
 
 func (w *tableWidget) viewLines(width int) []string {
-	// Force a color profile so Reverse/background styles emit ANSI in tests
-	// and non-TTY environments (matches editor/layout_test.go).
-	lipgloss.SetColorProfile(termenv.TrueColor)
 	th := theme.DefaultDark()
 	ncols := w.colCount()
 	if ncols == 0 {

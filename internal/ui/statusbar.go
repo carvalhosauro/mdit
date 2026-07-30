@@ -44,6 +44,9 @@ func (a *App) renderStatusBar() string {
 	}
 
 	hints := "  " + barHints()
+	if h := a.editor.BlockEditHint(); h != "" {
+		hints = "  " + h
+	}
 	showWords := true
 
 	// rightCore (message + position) is protected; the word count is optional
