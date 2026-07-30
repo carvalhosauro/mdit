@@ -6,6 +6,7 @@
 package render
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/alecthomas/chroma/v2"
@@ -15,6 +16,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
+	"github.com/muesli/reflow/wordwrap"
 	"github.com/muesli/reflow/wrap"
 	"github.com/yuin/goldmark/ast"
 	east "github.com/yuin/goldmark/extension/ast"
@@ -139,9 +141,92 @@ func renderRaw(res mdparse.Result, b mdparse.Block, style lipgloss.Style, ctx Co
 	return out
 }
 
-// --- blockquote ---
+// --- blockquote / callout ---
+
+// calloutRe matches Obsidian-style callout markers on the first paragraph of a
+// blockquote: [!warning] optional title…
+var calloutRe = regexp.MustCompile(`(?i)^\[!([a-z][a-z0-9_-]*)\]\s*(.*)$`)
 
 func renderBlockquote(b mdparse.Block, source []byte, ctx Context) []string {
+	if b.Node != nil {
+		if first := firstBlockPlain(b.Node, source); first != "" {
+			if m := calloutRe.FindStringSubmatch(first); m != nil {
+				typ := strings.ToLower(m[1])
+				if icon, titleStyle, ok := calloutStyle(typ, ctx.Theme); ok {
+					return renderCallout(b, source, ctx, icon, titleStyle, m[2])
+				}
+			}
+		}
+	}
+	return renderPlainQuote(b, source, ctx)
+}
+
+func firstBlockPlain(n ast.Node, source []byte) string {
+	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
+		if c.Kind() == ast.KindParagraph || c.Kind() == ast.KindTextBlock {
+			return strings.TrimSpace(plainInline(c, source))
+		}
+	}
+	return ""
+}
+
+func calloutStyle(typ string, th theme.Theme) (icon string, title lipgloss.Style, ok bool) {
+	title = th.CalloutTitle
+	switch typ {
+	case "note", "info":
+		return "ℹ", title.Foreground(lipgloss.Color("#89B4FA")), true
+	case "tip", "hint":
+		return "💡", title.Foreground(lipgloss.Color("#A6E3A1")), true
+	case "warning", "caution":
+		return "⚠", title.Foreground(lipgloss.Color("#FAB387")), true
+	case "danger", "error":
+		return "✖", title.Foreground(lipgloss.Color("#F38BA8")), true
+	case "important":
+		return "★", title.Foreground(lipgloss.Color("#CBA6F7")), true
+	default:
+		return "", title, false
+	}
+}
+
+func renderCallout(b mdparse.Block, source []byte, ctx Context, icon string, titleStyle lipgloss.Style, title string) []string {
+	th := ctx.Theme
+	prefix := th.Callout.Render("│ ")
+	inner := ctx.Width - 2
+	if inner < 1 {
+		inner = 1
+	}
+
+	head := icon
+	if strings.TrimSpace(title) != "" {
+		head = icon + " " + title
+	}
+	out := []string{titleStyle.Render(head)}
+
+	first := true
+	if b.Node != nil {
+		for c := b.Node.FirstChild(); c != nil; c = c.NextSibling() {
+			if first {
+				first = false
+				// Skip the marker paragraph ([!type] title); body follows.
+				continue
+			}
+			out = append(out, "")
+			for _, ln := range wrapStyled(renderInlines(c, source, ctx), inner) {
+				if strings.TrimSpace(ansi.Strip(ln)) == "" {
+					out = append(out, th.Callout.Render("│"))
+					continue
+				}
+				out = append(out, prefix+ln)
+			}
+		}
+	}
+	if len(out) == 1 {
+		out = append(out, th.Callout.Render("│"))
+	}
+	return out
+}
+
+func renderPlainQuote(b mdparse.Block, source []byte, ctx Context) []string {
 	th := ctx.Theme
 	prefix := th.Quote.Render("│ ")
 	inner := ctx.Width - 2
@@ -313,11 +398,11 @@ func renderTable(b mdparse.Block, source []byte, ctx Context) []string {
 
 	var out []string
 	if len(header) > 0 {
-		out = append(out, renderRow(header, widths, th.TableHeader))
+		out = append(out, renderRow(header, widths, th.TableHeader)...)
 		out = append(out, separatorRow(widths, th.Table))
 	}
 	for _, r := range rows {
-		out = append(out, renderRow(r, widths, th.Table))
+		out = append(out, renderRow(r, widths, th.Table)...)
 	}
 	if len(out) == 0 {
 		out = []string{""}
@@ -366,18 +451,86 @@ func fitColumns(widths []int, width int) []int {
 	return out
 }
 
-func renderRow(cells []string, widths []int, style lipgloss.Style) string {
-	parts := make([]string, len(widths))
+func renderRow(cells []string, widths []int, style lipgloss.Style) []string {
+	wrapped := make([][]string, len(widths))
+	maxLines := 1
 	for i := range widths {
 		cell := ""
 		if i < len(cells) {
 			cell = cells[i]
 		}
-		cell = runewidth.Truncate(cell, widths[i], "…")
-		cell = runewidth.FillRight(cell, widths[i])
-		parts[i] = style.Render(cell)
+		lines := wrapPlain(cell, widths[i])
+		for j, ln := range lines {
+			lines[j] = runewidth.FillRight(ln, widths[i])
+		}
+		wrapped[i] = lines
+		if len(lines) > maxLines {
+			maxLines = len(lines)
+		}
 	}
-	return strings.Join(parts, " "+style.Render("│")+" ")
+
+	sep := " " + style.Render("│") + " "
+	out := make([]string, maxLines)
+	for r := 0; r < maxLines; r++ {
+		parts := make([]string, len(widths))
+		for c := range widths {
+			ln := runewidth.FillRight("", widths[c])
+			if r < len(wrapped[c]) {
+				ln = wrapped[c][r]
+			}
+			parts[c] = style.Render(ln)
+		}
+		out[r] = strings.Join(parts, sep)
+	}
+	return out
+}
+
+// wrapPlain wraps plain text to at most width terminal cells without dropping
+// characters to an ellipsis — used so table cells stay fully readable (#9).
+func wrapPlain(s string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	if s == "" {
+		return []string{""}
+	}
+	// Prefer word boundaries; fall back to hard wrap for overlong tokens.
+	wrapped := wordwrap.String(s, width)
+	var lines []string
+	for _, ln := range strings.Split(wrapped, "\n") {
+		if runewidth.StringWidth(ln) <= width {
+			lines = append(lines, ln)
+			continue
+		}
+		lines = append(lines, hardWrap(ln, width)...)
+	}
+	if len(lines) == 0 {
+		return []string{""}
+	}
+	return lines
+}
+
+func hardWrap(s string, width int) []string {
+	var lines []string
+	var b strings.Builder
+	w := 0
+	for _, r := range s {
+		rw := runewidth.RuneWidth(r)
+		if rw < 1 {
+			rw = 1
+		}
+		if w+rw > width && b.Len() > 0 {
+			lines = append(lines, b.String())
+			b.Reset()
+			w = 0
+		}
+		b.WriteRune(r)
+		w += rw
+	}
+	if b.Len() > 0 || len(lines) == 0 {
+		lines = append(lines, b.String())
+	}
+	return lines
 }
 
 func separatorRow(widths []int, style lipgloss.Style) string {

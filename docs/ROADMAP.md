@@ -123,13 +123,15 @@ Padrão por item: add extensão goldmark (ou parse custom) + 1 estilo no `theme`
 1 case em `render.Block`/`styleInline`. Cobertura atual: `internal/mdparse/parse.go:24-35`
 (blocos) e `internal/render/inline.go:35-77` (inline).
 
+Entregue: **B1 callouts**, **B2 highlight**, **B5 typographer**. Pendente: B3 footnotes, B4 deflists.
+
 | # | Item | Size | Escopo | Aceite |
 |---|------|:----:|--------|--------|
-| B1 | Callouts `> [!note]` | M | Maior ganho Obsidian. Hoje vira Blockquote genérico. **Parse custom sobre Blockquote** (travado — sem dep nova): regex na 1ª linha do blockquote detecta `> [!tipo] título` → render com ícone/cor por tipo (note/warning/tip/…). | render_test: `> [!warning]\n> x` → estilo de callout warning, não blockquote comum; tipo desconhecido cai em blockquote. |
-| B2 | Highlight `==texto==` | S | Mark do Obsidian. Extensão inline. Novo estilo `theme.Highlight`. | render_test: `==x==` → estilo highlight; `=x=` (single) não. |
-| B3 | Footnotes `[^1]` | S/M | `extension.Footnote` do goldmark. Render de referência + bloco de definição. | render_test: doc com `[^1]` + definição → referência estilizada + seção de notas. |
-| B4 | Definition lists | S | `extension.DefinitionList`. Novo Kind ou sub-render. | render_test: `termo\n: definição` → render de deflist. |
-| B5 | Typographer | S | `extension.Typographer` (aspas curvas, em-dash, ellipsis). Só render — **não** altera bytes no disco. | render_test: `"x"` renderiza com aspas curvas; `Save` mantém ASCII original. |
+| B1 ✅ | Callouts `> [!note]` | M | Parse custom sobre Blockquote: `[!tipo] título` → ícone/cor. | render_test warning ≠ quote; tipo desconhecido → quote. |
+| B2 ✅ | Highlight `==texto==` | S | Extensão inline + `theme.Highlight`. | `==x==` styled; `=x=` literal. |
+| B3 | Footnotes `[^1]` | S/M | `extension.Footnote` do goldmark. | ref + definição estilizadas. |
+| B4 | Definition lists | S | `extension.DefinitionList`. | `termo\n: definição` render. |
+| B5 ✅ | Typographer | S | `extension.Typographer` — só render. | aspas curvas no View; Source ASCII. |
 
 **Nota de invariante:** B5 é puramente visual. Nenhum item do Track B pode reescrever
 o buffer — render deriva da fonte, fonte intacta.
