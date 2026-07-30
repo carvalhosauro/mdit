@@ -167,16 +167,22 @@ func TestKeys_TableGoesRawOnEnterAndRendersOnExit(t *testing.T) {
 		t.Fatalf("table should stay rendered until edit intent")
 	}
 	m, _ = key(m, typeKey(tea.KeyEnter))
-	if !m.layouts[tb].raw {
-		t.Fatalf("table should be raw after Enter")
+	if !m.hasBlockEdit() {
+		t.Fatalf("table should open widget after Enter")
+	}
+	if m.layouts[tb].raw {
+		t.Fatalf("table widget must not use raw layout")
 	}
 	got := joinStrip(m.layouts[tb].lines)
-	if !strings.Contains(got, "| 1 | 2 |") {
-		t.Fatalf("raw table should show raw pipes, got %q", got)
+	if !strings.Contains(got, "1") {
+		t.Fatalf("widget should show cell text, got %q", got)
 	}
 	// Leave the table (down to the "end" paragraph past the blank separator).
 	m.cursorTo(doc.Position{Line: 5, Col: 0})
 	tb = m.testBlockForLine(2)
+	if m.hasBlockEdit() {
+		t.Fatalf("widget should clear on exit")
+	}
 	if m.layouts[tb].raw {
 		t.Fatalf("table should re-render on exit")
 	}

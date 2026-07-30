@@ -23,11 +23,11 @@ func TestLazyRaw_TableRenderedUntilEnter(t *testing.T) {
 	}
 
 	m, _ = key(m, typeKey(tea.KeyEnter))
-	if !m.layouts[tb].raw {
-		t.Fatal("Enter should activate raw editing on the table")
+	if !m.hasBlockEdit() {
+		t.Fatal("Enter should open table widget")
 	}
-	if got := joinStrip(m.layouts[tb].lines); !strings.Contains(got, "| A | B |") {
-		t.Fatalf("raw table missing source, got %q", got)
+	if m.layouts[tb].raw {
+		t.Fatal("table widget must not use raw layout")
 	}
 	// Enter activates only — it must not insert a newline into the table.
 	if m.Doc().Line(3) != "| A | B |" {
@@ -38,13 +38,13 @@ func TestLazyRaw_TableRenderedUntilEnter(t *testing.T) {
 func TestLazyRaw_FirstRuneActivatesAndInserts(t *testing.T) {
 	m := newFixture(t)
 	m.cursorTo(doc.Position{Line: 3, Col: 0})
-	tb := m.testBlockForLine(3)
+	before := m.Doc().Content()
 	m, _ = key(m, runeKey('X'))
-	if !m.layouts[tb].raw {
-		t.Fatal("first rune should activate raw mode")
+	if !m.hasBlockEdit() {
+		t.Fatal("first rune should open table widget")
 	}
-	if m.Doc().Line(3) != "X| A | B |" {
-		t.Fatalf("first rune should insert, got %q", m.Doc().Line(3))
+	if m.Doc().Content() != before {
+		t.Fatalf("first rune must not mutate doc until commit, got %q", m.Doc().Content())
 	}
 }
 
@@ -53,10 +53,13 @@ func TestLazyRaw_EscExitsRawWhileStayingOnBlock(t *testing.T) {
 	m.cursorTo(doc.Position{Line: 3, Col: 0})
 	m, _ = key(m, typeKey(tea.KeyEnter))
 	tb := m.testBlockForLine(3)
-	if !m.layouts[tb].raw {
-		t.Fatal("precondition: editing")
+	if !m.hasBlockEdit() {
+		t.Fatal("precondition: widget open")
 	}
 	m, _ = key(m, typeKey(tea.KeyEscape))
+	if m.hasBlockEdit() {
+		t.Fatal("Esc should clear table widget")
+	}
 	if m.layouts[tb].raw {
 		t.Fatal("Esc should leave structural block rendered")
 	}
@@ -72,6 +75,9 @@ func TestLazyRaw_LeavingBlockClearsEditing(t *testing.T) {
 	// Move up to the blank line above the table (line 2).
 	m, _ = key(m, typeKey(tea.KeyUp))
 	tb := m.testBlockForLine(3)
+	if m.hasBlockEdit() {
+		t.Fatal("leaving the table should clear widget")
+	}
 	if m.layouts[tb].raw {
 		t.Fatal("leaving the table should clear editing; table rendered again")
 	}

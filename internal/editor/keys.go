@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/carvalhosauro/mdit/internal/blockedit"
 	"github.com/carvalhosauro/mdit/internal/doc"
 	"github.com/carvalhosauro/mdit/internal/mdparse"
 )
@@ -14,6 +15,9 @@ import (
 func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if m.zen {
 		return m.handleZenKey(msg)
+	}
+	if m.active != nil {
+		return m.handleBlockEditKey(msg)
 	}
 	switch msg.Type {
 	case tea.KeyRunes:
@@ -26,7 +30,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case tea.KeySpace:
 		return m.insertAndMaybeAutocomplete(" ")
 	case tea.KeyEnter:
-		// Lazy-raw: Enter on a structural block arms editing without inserting.
+		// Table → structured widget; other structural → lazy-raw.
+		if m.shouldOpenTableWidget() {
+			if !m.openTableWidget() {
+				m.activateEditing()
+			}
+			m.recompute()
+			return m, nil
+		}
 		if m.shouldLazyActivate() {
 			m.activateEditing()
 			m.recompute()
@@ -230,7 +241,19 @@ func (m Model) handleZenKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 // insertAndMaybeAutocomplete inserts s at the cursor (replacing any selection)
 // and, if that just completed a "[[" trigger, returns an AutocompleteMsg command.
 func (m Model) insertAndMaybeAutocomplete(s string) (Model, tea.Cmd) {
-	if m.shouldLazyActivate() {
+	if m.shouldOpenTableWidget() {
+		if m.openTableWidget() {
+			w, cmd, sig := m.active.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)})
+			m.active = w
+			if sig == blockedit.Cancel || sig == blockedit.Commit {
+				m.finishBlockEdit(sig)
+				return m, cmd
+			}
+			m.recompute()
+			return m, cmd
+		}
+		m.activateEditing()
+	} else if m.shouldLazyActivate() {
 		m.activateEditing()
 	}
 	m.deleteSelection()
@@ -245,7 +268,19 @@ func (m Model) insertAndMaybeAutocomplete(s string) (Model, tea.Cmd) {
 
 // insertPaste inserts a bracketed-paste blob as literal text (no autocomplete).
 func (m Model) insertPaste(s string) (Model, tea.Cmd) {
-	if m.shouldLazyActivate() {
+	if m.shouldOpenTableWidget() {
+		if m.openTableWidget() {
+			w, cmd, sig := m.active.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s), Paste: true})
+			m.active = w
+			if sig == blockedit.Cancel || sig == blockedit.Commit {
+				m.finishBlockEdit(sig)
+				return m, cmd
+			}
+			m.recompute()
+			return m, cmd
+		}
+		m.activateEditing()
+	} else if m.shouldLazyActivate() {
 		m.activateEditing()
 	}
 	m.deleteSelection()
@@ -253,6 +288,48 @@ func (m Model) insertPaste(s string) (Model, tea.Cmd) {
 	m.goalCol = m.cursor.Col
 	m.recompute()
 	return m, nil
+}
+
+// handleBlockEditKey routes keys to the active widget.
+func (m Model) handleBlockEditKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+	// Leave-block motions commit first (S1.6); Esc cancels.
+	switch msg.Type {
+	case tea.KeyUp:
+		if m.widgetWouldLeave(-1) {
+			m.finishBlockEdit(blockedit.Commit)
+			m.clearSelection()
+			m.moveVertical(-1)
+			m.recompute()
+			return m, nil
+		}
+	case tea.KeyDown:
+		if m.widgetWouldLeave(1) {
+			m.finishBlockEdit(blockedit.Commit)
+			m.clearSelection()
+			m.moveVertical(1)
+			m.recompute()
+			return m, nil
+		}
+	}
+
+	w, cmd, sig := m.active.Update(msg)
+	m.active = w
+	switch sig {
+	case blockedit.Cancel, blockedit.Commit:
+		m.finishBlockEdit(sig)
+		return m, cmd
+	}
+	m.recompute()
+	return m, cmd
+}
+
+// widgetWouldLeave reports whether a vertical move by delta should exit the
+// active widget (based on in-widget focus, not the frozen doc cursor).
+func (m Model) widgetWouldLeave(delta int) bool {
+	if m.active == nil {
+		return false
+	}
+	return m.active.WouldLeave(delta)
 }
 
 // autocompleteCmd returns an AutocompleteMsg command when the two runes ending

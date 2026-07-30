@@ -33,11 +33,22 @@ type patch struct {
 // within coalesceWindow of the previous one are merged into the same undo
 // group instead of pushing a new entry.
 func (d *Document) recordEdit(from Position, oldText, newText string, cursorBefore, cursorAfter Position) {
+	d.recordEditMaybeCoalesce(from, oldText, newText, cursorBefore, cursorAfter, true)
+}
+
+// recordEditNonCoalesce is like recordEdit but never merges with adjacent
+// typing — used by ReplaceLines for atomic block rewrites.
+func (d *Document) recordEditNonCoalesce(from Position, oldText, newText string, cursorBefore, cursorAfter Position) {
+	d.recordEditMaybeCoalesce(from, oldText, newText, cursorBefore, cursorAfter, false)
+}
+
+func (d *Document) recordEditMaybeCoalesce(from Position, oldText, newText string, cursorBefore, cursorAfter Position, allowCoalesce bool) {
 	d.redoStack = nil
 	d.version++
 
 	now := d.clock()
-	singleRuneInsert := oldText == "" &&
+	singleRuneInsert := allowCoalesce &&
+		oldText == "" &&
 		utf8.RuneCountInString(newText) == 1 &&
 		!strings.ContainsRune(newText, '\n')
 
