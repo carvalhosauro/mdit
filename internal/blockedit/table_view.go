@@ -161,6 +161,124 @@ func (w *tableWidget) deleteForward() {
 	w.setCell(w.focusRow, w.focusCol, string(out))
 }
 
+func (w *tableWidget) insertRowBelow() {
+	ncols := w.colCount()
+	empty := make([]string, ncols)
+	if w.focusRow == 0 {
+		// Insert as first body row.
+		w.body = append([][]string{empty}, w.body...)
+		w.setFocus(1, w.focusCol)
+		return
+	}
+	// Insert below focused body row at body index focusRow.
+	bi := w.focusRow
+	if bi > len(w.body) {
+		bi = len(w.body)
+	}
+	w.body = append(w.body[:bi], append([][]string{empty}, w.body[bi:]...)...)
+	w.setFocus(w.focusRow+1, w.focusCol)
+}
+
+func (w *tableWidget) deleteFocusedRow() {
+	if w.focusRow == 0 {
+		return // header is immovable
+	}
+	bi := w.focusRow - 1
+	if len(w.body) <= 1 {
+		// Last body row: clear cells, keep the grid.
+		w.body[0] = make([]string, w.colCount())
+		w.setFocus(1, w.focusCol)
+		return
+	}
+	w.body = append(w.body[:bi], w.body[bi+1:]...)
+	if w.focusRow > len(w.body) {
+		w.setFocus(len(w.body), w.focusCol)
+	} else {
+		w.setFocus(w.focusRow, w.focusCol)
+	}
+}
+
+func (w *tableWidget) insertColRight() {
+	at := w.focusCol + 1
+	w.header = insertStringAt(w.header, at, "")
+	w.align = insertAlignAt(w.align, at, AlignNone)
+	for i := range w.body {
+		w.body[i] = insertStringAt(w.body[i], at, "")
+	}
+	w.setFocus(w.focusRow, at)
+}
+
+func (w *tableWidget) deleteFocusedCol() {
+	if w.colCount() <= 1 {
+		return
+	}
+	c := w.focusCol
+	w.header = removeStringAt(w.header, c)
+	w.align = removeAlignAt(w.align, c)
+	for i := range w.body {
+		w.body[i] = removeStringAt(w.body[i], c)
+	}
+	if c >= w.colCount() {
+		c = w.colCount() - 1
+	}
+	w.setFocus(w.focusRow, c)
+}
+
+func (w *tableWidget) cycleAlign() {
+	if w.focusCol < 0 || w.focusCol >= len(w.align) {
+		return
+	}
+	w.align[w.focusCol] = (w.align[w.focusCol] + 1) % 4
+}
+
+func insertStringAt(s []string, i int, v string) []string {
+	if i < 0 {
+		i = 0
+	}
+	if i > len(s) {
+		i = len(s)
+	}
+	out := make([]string, 0, len(s)+1)
+	out = append(out, s[:i]...)
+	out = append(out, v)
+	out = append(out, s[i:]...)
+	return out
+}
+
+func removeStringAt(s []string, i int) []string {
+	if i < 0 || i >= len(s) {
+		return s
+	}
+	out := make([]string, 0, len(s)-1)
+	out = append(out, s[:i]...)
+	out = append(out, s[i+1:]...)
+	return out
+}
+
+func insertAlignAt(a []Align, i int, v Align) []Align {
+	if i < 0 {
+		i = 0
+	}
+	if i > len(a) {
+		i = len(a)
+	}
+	out := make([]Align, 0, len(a)+1)
+	out = append(out, a[:i]...)
+	out = append(out, v)
+	out = append(out, a[i:]...)
+	return out
+}
+
+func removeAlignAt(a []Align, i int) []Align {
+	if i < 0 || i >= len(a) {
+		return a
+	}
+	out := make([]Align, 0, len(a)-1)
+	out = append(out, a[:i]...)
+	out = append(out, a[i+1:]...)
+	return out
+}
+
 func (w *tableWidget) viewLines(width int) []string {
 	// Force a color profile so Reverse/background styles emit ANSI in tests
 	// and non-TTY environments (matches editor/layout_test.go).

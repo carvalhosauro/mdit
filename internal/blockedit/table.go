@@ -99,6 +99,21 @@ func (w *tableWidget) Update(msg tea.Msg) (Widget, tea.Cmd, Signal) {
 	case tea.KeyDelete:
 		w.deleteForward()
 		return w, nil, Continue
+	case tea.KeyCtrlShiftDown:
+		w.insertRowBelow()
+		return w, nil, Continue
+	case tea.KeyCtrlShiftUp:
+		w.deleteFocusedRow()
+		return w, nil, Continue
+	case tea.KeyCtrlShiftRight:
+		w.insertColRight()
+		return w, nil, Continue
+	case tea.KeyCtrlShiftLeft:
+		w.deleteFocusedCol()
+		return w, nil, Continue
+	case tea.KeyCtrlL:
+		w.cycleAlign()
+		return w, nil, Continue
 	case tea.KeySpace:
 		w.insertRunes([]rune{' '})
 		return w, nil, Continue
