@@ -2,7 +2,6 @@ package blockedit
 
 import (
 	"strings"
-	"unicode/utf8"
 
 	"github.com/carvalhosauro/mdit/internal/doc"
 	tea "github.com/charmbracelet/bubbletea"
@@ -92,6 +91,12 @@ func (w *tableWidget) Update(msg tea.Msg) (Widget, tea.Cmd, Signal) {
 		return w, nil, Continue
 	case tea.KeyDown:
 		w.moveVertical(1)
+		return w, nil, Continue
+	case tea.KeyHome:
+		w.moveHome()
+		return w, nil, Continue
+	case tea.KeyEnd:
+		w.moveEnd()
 		return w, nil, Continue
 	case tea.KeyBackspace:
 		w.backspace()
@@ -194,7 +199,7 @@ func (w *tableWidget) focusFromCursor(cursor doc.Position, blockStart int, raw [
 		}
 	}
 	w.focusCol = 0
-	w.cellCol = utf8.RuneCountInString(w.cell(w.focusRow, w.focusCol))
+	w.cellCol = 0 // open at start so the caret is visible immediately
 	_ = raw
 }
 

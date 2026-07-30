@@ -64,7 +64,7 @@ func TestApp_TableWidgetEditLeaveSaveSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), "AZ") {
-		t.Fatalf("saved file should contain edited cell AZ, got %q", string(b))
+	if !strings.Contains(string(b), "ZA") {
+		t.Fatalf("saved file should contain edited cell ZA (typed at start), got %q", string(b))
 	}
 }

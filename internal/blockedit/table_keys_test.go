@@ -107,6 +107,102 @@ func TestTableKeys_LinesShowsCellsAndFocus(t *testing.T) {
 	if rawJoin == joined {
 		t.Fatalf("expected ANSI styling on focused cell, got plain %q", joined)
 	}
+	if !strings.Contains(rawJoin, "\x1b[7m") && !strings.Contains(rawJoin, "\x1b[7;") {
+		t.Fatalf("expected reverse-video caret in focused cell, got %q", rawJoin)
+	}
+}
+
+func TestTableKeys_TabPlacesCaretAtStart(t *testing.T) {
+	w := fixture2x2(t)
+	w, _, _ = w.Update(tea.KeyMsg{Type: tea.KeyTab})
+	tw := mustTable(t, w)
+	if tw.focusRow != 0 || tw.focusCol != 1 {
+		t.Fatalf("focus=(%d,%d) want (0,1)", tw.focusRow, tw.focusCol)
+	}
+	if tw.cellCol != 0 {
+		t.Fatalf("Tab should place caret at start, cellCol=%d", tw.cellCol)
+	}
+}
+
+func TestTableKeys_ShiftTabPlacesCaretAtEnd(t *testing.T) {
+	w := fixture2x2(t)
+	w, _, _ = w.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	tw := mustTable(t, w)
+	if tw.focusRow != 1 || tw.focusCol != 1 {
+		t.Fatalf("focus=(%d,%d) want (1,1)", tw.focusRow, tw.focusCol)
+	}
+	if tw.cellCol != 1 { // cell "2" has 1 rune
+		t.Fatalf("Shift+Tab should place caret at end, cellCol=%d want 1", tw.cellCol)
+	}
+}
+
+func TestTableKeys_LeftArrowMovesCaretThenCell(t *testing.T) {
+	raw := []string{
+		"| AB | C |",
+		"| --- | --- |",
+		"| 1 | 2 |",
+	}
+	w, ok := OpenTable(raw, doc.Position{}, 0)
+	if !ok {
+		t.Fatal("OpenTable")
+	}
+	tw := mustTable(t, w)
+	tw.setFocus(0, 0, true) // caret at end of "AB" (cellCol=2)
+	if tw.cellCol != 2 {
+		t.Fatalf("precondition cellCol=%d", tw.cellCol)
+	}
+
+	w, _, _ = w.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	tw = mustTable(t, w)
+	if tw.focusCol != 0 || tw.cellCol != 1 {
+		t.Fatalf("1st ←: want same cell col=1, got focusCol=%d cellCol=%d", tw.focusCol, tw.cellCol)
+	}
+
+	w, _, _ = w.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	tw = mustTable(t, w)
+	if tw.focusCol != 0 || tw.cellCol != 0 {
+		t.Fatalf("2nd ←: want same cell col=0, got focusCol=%d cellCol=%d", tw.focusCol, tw.cellCol)
+	}
+
+	// At start: next ← jumps to previous cell with caret at end.
+	// Only one col to the left doesn't exist — stay, OR we need two cols.
+	// Move to col 1 first, then left across boundary.
+	tw.setFocus(0, 1, false) // "C", caret at start
+	w, _, _ = w.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	tw = mustTable(t, w)
+	if tw.focusRow != 0 || tw.focusCol != 0 {
+		t.Fatalf("← at start of col1 → col0, got (%d,%d)", tw.focusRow, tw.focusCol)
+	}
+	if tw.cellCol != 2 { // end of "AB"
+		t.Fatalf("entering from right should put caret at end, cellCol=%d want 2", tw.cellCol)
+	}
+}
+
+func TestTableKeys_RightArrowEntersNextAtStart(t *testing.T) {
+	w := fixture2x2(t)
+	tw := mustTable(t, w)
+	tw.setFocus(0, 0, true) // end of "A"
+	w, _, _ = w.Update(tea.KeyMsg{Type: tea.KeyRight})
+	tw = mustTable(t, w)
+	if tw.focusCol != 1 || tw.cellCol != 0 {
+		t.Fatalf("→ at end → next cell at start, got focusCol=%d cellCol=%d", tw.focusCol, tw.cellCol)
+	}
+}
+
+func TestTableKeys_HomeEnd(t *testing.T) {
+	w := fixture2x2(t)
+	tw := mustTable(t, w)
+	tw.setFocus(0, 0, true)
+	w, _, _ = w.Update(tea.KeyMsg{Type: tea.KeyHome})
+	tw = mustTable(t, w)
+	if tw.cellCol != 0 {
+		t.Fatalf("Home → cellCol=0, got %d", tw.cellCol)
+	}
+	w, _, _ = w.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	tw = mustTable(t, w)
+	if tw.cellCol != 1 {
+		t.Fatalf("End → cellCol=1 for \"A\", got %d", tw.cellCol)
+	}
 }
 
 func mustTable(t *testing.T, w Widget) *tableWidget {

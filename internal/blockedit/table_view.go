@@ -55,7 +55,7 @@ func (w *tableWidget) clampCellCol() {
 	}
 }
 
-func (w *tableWidget) setFocus(row, col int) {
+func (w *tableWidget) setFocus(row, col int, atEnd bool) {
 	rows := w.rowCount()
 	cols := w.colCount()
 	if rows == 0 || cols == 0 {
@@ -75,7 +75,12 @@ func (w *tableWidget) setFocus(row, col int) {
 	}
 	w.focusRow = row
 	w.focusCol = col
-	w.cellCol = utf8.RuneCountInString(w.cell(row, col))
+	n := utf8.RuneCountInString(w.cell(row, col))
+	if atEnd {
+		w.cellCol = n
+	} else {
+		w.cellCol = 0
+	}
 }
 
 func (w *tableWidget) moveFocus(delta int) {
@@ -87,7 +92,8 @@ func (w *tableWidget) moveFocus(delta int) {
 	idx := w.focusRow*cols + w.focusCol + delta
 	total := rows * cols
 	idx = ((idx % total) + total) % total
-	w.setFocus(idx/cols, idx%cols)
+	// Tab (forward) → caret at start; Shift+Tab (back) → caret at end.
+	w.setFocus(idx/cols, idx%cols, delta < 0)
 }
 
 func (w *tableWidget) moveVertical(delta int) {
@@ -96,7 +102,8 @@ func (w *tableWidget) moveVertical(delta int) {
 	if next < 0 || next >= rows {
 		return // stay; editor handles leave-block commit in S1.6
 	}
-	w.setFocus(next, w.focusCol)
+	// Down → start; Up → end (symmetric with Tab / Shift+Tab).
+	w.setFocus(next, w.focusCol, delta < 0)
 }
 
 func (w *tableWidget) moveLeft() {
@@ -105,9 +112,9 @@ func (w *tableWidget) moveLeft() {
 		return
 	}
 	if w.focusCol > 0 {
-		w.setFocus(w.focusRow, w.focusCol-1)
+		w.setFocus(w.focusRow, w.focusCol-1, true) // enter from right → end
 	} else if w.focusRow > 0 {
-		w.setFocus(w.focusRow-1, w.colCount()-1)
+		w.setFocus(w.focusRow-1, w.colCount()-1, true)
 	}
 }
 
@@ -118,14 +125,20 @@ func (w *tableWidget) moveRight() {
 		return
 	}
 	if w.focusCol+1 < w.colCount() {
-		w.setFocus(w.focusRow, w.focusCol+1)
-		w.cellCol = 0
+		w.setFocus(w.focusRow, w.focusCol+1, false) // enter from left → start
 		return
 	}
 	if w.focusRow+1 < w.rowCount() {
-		w.setFocus(w.focusRow+1, 0)
-		w.cellCol = 0
+		w.setFocus(w.focusRow+1, 0, false)
 	}
+}
+
+func (w *tableWidget) moveHome() {
+	w.cellCol = 0
+}
+
+func (w *tableWidget) moveEnd() {
+	w.cellCol = utf8.RuneCountInString(w.cell(w.focusRow, w.focusCol))
 }
 
 func (w *tableWidget) insertRunes(rs []rune) {
@@ -166,7 +179,7 @@ func (w *tableWidget) insertRowBelow() {
 	if w.focusRow == 0 {
 		// Insert as first body row.
 		w.body = append([][]string{empty}, w.body...)
-		w.setFocus(1, w.focusCol)
+		w.setFocus(1, w.focusCol, false)
 		return
 	}
 	// Insert below focused body row at body index focusRow.
@@ -175,7 +188,7 @@ func (w *tableWidget) insertRowBelow() {
 		bi = len(w.body)
 	}
 	w.body = append(w.body[:bi], append([][]string{empty}, w.body[bi:]...)...)
-	w.setFocus(w.focusRow+1, w.focusCol)
+	w.setFocus(w.focusRow+1, w.focusCol, false)
 }
 
 func (w *tableWidget) deleteFocusedRow() {
@@ -186,14 +199,14 @@ func (w *tableWidget) deleteFocusedRow() {
 	if len(w.body) <= 1 {
 		// Last body row: clear cells, keep the grid.
 		w.body[0] = make([]string, w.colCount())
-		w.setFocus(1, w.focusCol)
+		w.setFocus(1, w.focusCol, false)
 		return
 	}
 	w.body = append(w.body[:bi], w.body[bi+1:]...)
 	if w.focusRow > len(w.body) {
-		w.setFocus(len(w.body), w.focusCol)
+		w.setFocus(len(w.body), w.focusCol, false)
 	} else {
-		w.setFocus(w.focusRow, w.focusCol)
+		w.setFocus(w.focusRow, w.focusCol, false)
 	}
 }
 
@@ -204,7 +217,7 @@ func (w *tableWidget) insertColRight() {
 	for i := range w.body {
 		w.body[i] = insertStringAt(w.body[i], at, "")
 	}
-	w.setFocus(w.focusRow, at)
+	w.setFocus(w.focusRow, at, false)
 }
 
 func (w *tableWidget) deleteFocusedCol() {
@@ -220,7 +233,7 @@ func (w *tableWidget) deleteFocusedCol() {
 	if c >= w.colCount() {
 		c = w.colCount() - 1
 	}
-	w.setFocus(w.focusRow, c)
+	w.setFocus(w.focusRow, c, false)
 }
 
 func (w *tableWidget) cycleAlign() {
@@ -305,10 +318,10 @@ func (w *tableWidget) viewLines(width int) []string {
 	widths = fitViewColumns(widths, width)
 
 	var out []string
-	out = append(out, renderViewRow(w.header, widths, th.TableHeader, 0, w.focusRow, w.focusCol, th)...)
+	out = append(out, w.renderViewRow(w.header, widths, th.TableHeader, 0, th)...)
 	out = append(out, viewSeparator(widths, th.Table))
 	for i, row := range w.body {
-		out = append(out, renderViewRow(row, widths, th.Table, i+1, w.focusRow, w.focusCol, th)...)
+		out = append(out, w.renderViewRow(row, widths, th.Table, i+1, th)...)
 	}
 	if len(out) == 0 {
 		out = []string{""}
@@ -344,7 +357,7 @@ func fitViewColumns(widths []int, width int) []int {
 	return out
 }
 
-func renderViewRow(cells []string, widths []int, style lipgloss.Style, row, focusRow, focusCol int, th theme.Theme) []string {
+func (w *tableWidget) renderViewRow(cells []string, widths []int, style lipgloss.Style, row int, th theme.Theme) []string {
 	wrapped := make([][]string, len(widths))
 	maxLines := 1
 	for i := range widths {
@@ -352,34 +365,101 @@ func renderViewRow(cells []string, widths []int, style lipgloss.Style, row, focu
 		if i < len(cells) {
 			cell = cells[i]
 		}
-		lines := wrapViewPlain(cell, widths[i])
-		for j, ln := range lines {
-			lines[j] = runewidth.FillRight(ln, widths[i])
+		var lines []string
+		if row == w.focusRow && i == w.focusCol {
+			lines = paintFocusedCell(cell, widths[i], w.cellCol, th)
+		} else {
+			lines = wrapViewPlain(cell, widths[i])
+			for j, ln := range lines {
+				lines[j] = style.Render(runewidth.FillRight(ln, widths[i]))
+			}
 		}
 		wrapped[i] = lines
 		if len(lines) > maxLines {
 			maxLines = len(lines)
 		}
 	}
-	focusStyle := th.RawBlock.Reverse(true)
 	sep := " " + style.Render("│") + " "
 	out := make([]string, maxLines)
 	for r := 0; r < maxLines; r++ {
 		parts := make([]string, len(widths))
 		for c := range widths {
-			ln := runewidth.FillRight("", widths[c])
 			if r < len(wrapped[c]) {
-				ln = wrapped[c][r]
-			}
-			if row == focusRow && c == focusCol {
-				parts[c] = focusStyle.Render(ln)
+				parts[c] = wrapped[c][r]
 			} else {
-				parts[c] = style.Render(ln)
+				parts[c] = style.Render(runewidth.FillRight("", widths[c]))
 			}
 		}
 		out[r] = strings.Join(parts, sep)
 	}
 	return out
+}
+
+// paintFocusedCell renders a cell with Selection fill and a reverse caret at
+// cellCol (rune index). Returns one or more screen lines (soft-wrapped).
+func paintFocusedCell(cell string, width, cellCol int, th theme.Theme) []string {
+	if width < 1 {
+		width = 1
+	}
+	fill := th.Selection
+	caret := th.Selection.Reverse(true)
+	runes := []rune(cell)
+	if cellCol < 0 {
+		cellCol = 0
+	}
+	if cellCol > len(runes) {
+		cellCol = len(runes)
+	}
+
+	type seg struct {
+		text  string
+		style lipgloss.Style
+	}
+	var segs []seg
+	for i := 0; i < len(runes); i++ {
+		if i == cellCol {
+			segs = append(segs, seg{string(runes[i]), caret})
+		} else {
+			segs = append(segs, seg{string(runes[i]), fill})
+		}
+	}
+	if cellCol >= len(runes) {
+		segs = append(segs, seg{" ", caret})
+	}
+
+	contentW := 0
+	for _, s := range segs {
+		contentW += runewidth.StringWidth(s.text)
+	}
+	for contentW < width {
+		segs = append(segs, seg{" ", fill})
+		contentW++
+	}
+
+	var lines []string
+	var b strings.Builder
+	lineW := 0
+	flush := func() {
+		for lineW < width {
+			b.WriteString(fill.Render(" "))
+			lineW++
+		}
+		lines = append(lines, b.String())
+		b.Reset()
+		lineW = 0
+	}
+	for _, s := range segs {
+		sw := runewidth.StringWidth(s.text)
+		if lineW+sw > width && lineW > 0 {
+			flush()
+		}
+		b.WriteString(s.style.Render(s.text))
+		lineW += sw
+	}
+	if b.Len() > 0 || len(lines) == 0 {
+		flush()
+	}
+	return lines
 }
 
 func viewSeparator(widths []int, style lipgloss.Style) string {
