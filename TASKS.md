@@ -1,76 +1,112 @@
 # mdit — TASKS (handoff para qualquer agente: Cursor, Claude Code, etc.)
 
-> Fonte de verdade detalhada: `docs/superpowers/plans/2026-07-16-mdit-mvp.md` (plano completo, passos TDD, código) e `docs/superpowers/specs/2026-07-16-mdit-mvp-design.md` (design/decisões).
-> Progresso corrente: `.superpowers/sdd/progress.md` (ledger) + relatórios/reviews por task em `.superpowers/sdd/task-N-{brief,report,review}.md`.
-> Branch de trabalho: `feat/mvp`. Processo: TDD por task → commit convencional → code review → QA (`go test ./... && go vet ./... && gofmt -l .` limpos).
+> **MVP (feito):** `docs/superpowers/plans/2026-07-16-mdit-mvp.md` +
+> `docs/superpowers/specs/2026-07-16-mdit-mvp-design.md`.
+> **v3 / S1 (próximo):** `docs/superpowers/plans/2026-07-30-mdit-v3-table-widget.md` +
+> `docs/superpowers/specs/2026-07-30-mdit-v3-table-widget-design.md`.
+> Roadmap / decisões travadas: `docs/ROADMAP.md`. Release train: `docs/RELEASE_FLOW.md`
+> (`feat/*` → `stable`).
+>
+> Processo: TDD por task → commit convencional → code review → QA
+> (`CGO_ENABLED=0 go test ./... && go vet ./... && gofmt -l .` limpos).
+> UI em inglês.
 
 ## Critérios de aceite globais (valem para TODAS as tasks)
 
-- `go build ./...`, `go vet ./...`, `go test ./...` verdes; `gofmt -l .` vazio; CGO_ENABLED=0.
-- Cursor sempre em coordenadas cruas (linha, coluna-em-runes); tela é derivada.
-- Keybindings: Ctrl+S salvar, Ctrl+Q sair, Ctrl+P finder, Ctrl+E zen, Ctrl+] seguir link, Ctrl+B voltar, Ctrl+Z/Y undo/redo.
+- `go build ./...`, `go vet ./...`, `go test ./...` verdes; `gofmt -l .` vazio; `CGO_ENABLED=0`.
+- Cursor sempre em coordenadas cruas (linha, coluna-em-runes) fora de widgets; tela é derivada.
 - Mensagens de UI em inglês. Commits conventional commits.
+- PRs: branch `feat/*` → base **`stable`** (não `main`).
 
-## Status
+## Status — MVP (histórico)
 
 | # | Task | Status | Commits |
 |---|------|--------|---------|
-| 1 | Scaffold (go.mod, LICENSE MIT, README, main --version) | ✅ feito + review | 1640f45, ae8c9cb |
-| 2 | `internal/doc` — buffer de linhas, Insert/DeleteRange rune-aware, undo/redo coalescido (500ms, clock injetável), Save com ErrExternalChange (mtime) | ✅ feito + review | c6ecd22 |
-| 3 | `internal/vault` — índice nome→path, Resolve case-insensitive (empate: path mais curto, depois lexicográfico), List estável, paths absolutos, root oculto ok | ✅ feito + review | 839e0a6, e4eb8f7 |
-| 4 | `internal/mdparse` — goldmark+GFM → `[]Block` cobrindo TODAS as linhas (invariante), extensão wikilink `[[t]]`/`[[t\|alias]]`, `WikiLinkAt`, frontmatter, setext | ✅ feito + review | 53af578, 65a8ef6 |
-| 5 | `internal/theme` + `internal/render` — bloco → linhas estilizadas ≤ Width, chroma, wrap ANSI-safe, wikilink broken style | ✅ feito + review | 084878e |
-| 6 | `internal/editor` — widget virtualizado (prefix sums), bloco-sob-cursor cru, teclas de edição, undo | ✅ feito + review | e2254d4 |
-| 7 | `internal/ui` + `cmd/mdit` — app rodável, statusbar, prompts (dirty/conflito), panic recover → `.mdit-recover` | ✅ feito + review | 6a89f2f, e591a1c |
-| 8 | Fuzzy finder (Ctrl+P, overlay bubbles/list) | ✅ feito | 704b569 |
-| 9 | Wikilinks: Ctrl+] segue, Ctrl+B volta (pilha), autocomplete popup em `[[`, broken em vermelho | ✅ feito | 704b569 |
-| 10 | Zen mode (Ctrl+E, read-only, centrado ≤80 cols, preserva cursor/scroll ao voltar) | ✅ feito | 704b569 |
-| 11 | Integração e2e (teatest), CI GitHub Actions (3 OS), .golangci.yml, README final | ✅ feito | 9d1a7fe |
+| 1 | Scaffold (go.mod, LICENSE MIT, README, main --version) | ✅ | 1640f45, ae8c9cb |
+| 2 | `internal/doc` — buffer, edits, undo/redo, save | ✅ | c6ecd22 |
+| 3 | `internal/vault` — índice nome→path, Resolve | ✅ | 839e0a6, e4eb8f7 |
+| 4 | `internal/mdparse` — goldmark+GFM → `[]Block`, wikilink | ✅ | 53af578, 65a8ef6 |
+| 5 | `internal/theme` + `internal/render` | ✅ | 084878e |
+| 6 | `internal/editor` — viewport, bloco-sob-cursor | ✅ | e2254d4 |
+| 7 | `internal/ui` + `cmd/mdit` | ✅ | 6a89f2f, e591a1c |
+| 8 | Fuzzy finder (Ctrl+P) | ✅ | 704b569 |
+| 9 | Wikilinks follow / back / autocomplete | ✅ | 704b569 |
+| 10 | Zen mode (Ctrl+E) | ✅ | 704b569 |
+| 11 | Integração e2e, CI, README | ✅ | 9d1a7fe |
+
+## Status — Track A pós-MVP (pré-v3)
+
+| # | Task | Status | Notas |
+|---|------|--------|-------|
+| M0 | Bugfix & hardening | ✅ | ver ROADMAP M0 |
+| v2 | Polish (Esc flash, placeholders, create-note, word count) | ✅ | |
+| S0 | Selection + clipboard (OSC 52) | ✅ | `7771899` |
+| L1 | Lazy-raw (structural gate) | ✅ | `e0ba9f5`, `7a3e5d5` |
+| Track B (parcial) | Callouts, highlight, typographer | ✅ | `2bf3ad9`; pendente B3/B4 |
+
+## Status — v3 / S1 (Table Widget) ← **COMPLETO**
+
+> Spec + plan TDD acima. S1 entregue; S2/S3 só como follow-up.
+
+| # | Task | Status | Commit alvo |
+|---|------|--------|-------------|
+| S1.1 | `doc.ReplaceLines` — mutação atômica de range de linhas + 1 undo | ✅ `2de67a8` | `feat(doc): add ReplaceLines for atomic block rewrites` |
+| S1.2 | `internal/blockedit` — interface `Widget` + parse/serialize pipe table | ✅ `09ef3cb` | `feat(blockedit): pipe-table model with parse/serialize round-trip` |
+| S1.3 | Table widget — Tab/setas, edição de célula, Esc→Cancel | ✅ `f29efac` | `feat(blockedit): table cell navigation and in-memory editing` |
+| S1.4 | Grade: add/del row/col, Ctrl+L align, auto-resize no serialize | ✅ `55420ad` | `feat(blockedit): table row/column ops and alignment cycle` |
+| S1.5 | Editor seam: `active` + branch widget em `layout.go`; Table Enter→widget; fence continua lazy-raw; atualizar testes L1 de tabela | ✅ `4278ca8` | `feat(editor): open table widget on edit intent via lazy-raw seam` |
+| S1.6 | Commit via `ReplaceLines` / Esc cancel / leave-block commit; undo atômico | ✅ `54df372` | `feat(editor): atomic table commit via ReplaceLines and Esc cancel` |
+| S1.7 | `BlockEditHint` + statusbar + teatest smoke | ✅ `ccc7db5` | `feat(ui): table-widget status hint and smoke teatest` |
+| S1.8 | Gate QA + marcar status nesta tabela | ✅ | `docs(tasks): mark v3/S1 table widget complete` |
+
+### Aceite S1 (checklist — espelho do plan)
+
+- [x] Tabela sob cursor fica renderizada até Enter / 1º rune.
+- [x] Enter abre widget (não raw); não insere `\n`; `Version` intacto até Commit.
+- [x] Editar célula + sair do bloco → markdown atualizado; um `^Z` desfaz o bloco inteiro.
+- [x] Esc descarta; doc idêntico ao pré-open.
+- [x] Add coluna reflete no source após Commit.
+- [x] Code fence ainda lazy-raw.
+- [x] Malformed table → fallback raw.
+- [x] `CGO_ENABLED=0 go test ./...` + vet + gofmt limpos.
+
+### Como executar (agente)
+
+1. Ler o **spec** completo, depois a task corrente no **plan** (passos `- [ ]`).
+2. Branch: `feat/v3-table-widget` (ou continuar numa `feat/*` existente alinhada a S1).
+3. TDD: testes → FAIL → código → PASS → commit convencional da task.
+4. Não implementar S2/S3; não reabrir arquitetura (editor-centric / mesmo seam / ReplaceLines).
+5. Ao terminar S1.8: PR → `stable`.
+
+### Follow-ups (NÃO fazer em S1)
+
+| # | Item | Status |
+|---|------|--------|
+| S2 | Padrão reusável: code fence / links / callouts widgets | ⏳ depois de S1 |
+| S3 | In-doc find (`^F`) | ⏳ depois de S1 |
+| B3/B4 | Footnotes / definition lists (Track B) | ⏳ paralelo ok |
 
 ## Contratos entre pacotes (NÃO quebrar)
 
-- `doc`: `Position{Line,Col}`; `Insert/DeleteRange/DeleteBackward/DeleteForward` retornam Position; `Undo/Redo() (Position, bool)`; `Version()` incrementa a cada mutação (chave de cache); `Save() error` (→ `doc.ErrExternalChange`), `SaveForce()`.
-- `vault`: `Open(root) (*Vault, error)`; `List() []Note{Name,Path}`; `Resolve(target string) (string, bool)`; `Rescan() error`.
-- `mdparse`: `Parse(lines []string) Result{Blocks []Block, Source []byte}`; `Block{Kind, Start, End, Node}`; blocos cobrem [0,n-1] contíguos sem overlap; segmentos do Node indexam `Source` (alinhado); `WikiLinkAt(line string, col int) (string, bool)` col em runes; node `WikiLink{Target, Alias}.Label()`.
-- `render`: `Block(res mdparse.Result, i int, ctx Context{Width, Theme, IsBroken}) []string`; toda linha ≤ Width células imprimíveis; `len(out) ≥ 1`; determinístico por (conteúdo, Width); IsBroken nil-safe.
-- `theme`: `DefaultDark() Theme` (campos lipgloss por elemento).
+- `doc`: `Position{Line,Col}`; `Insert/DeleteRange/DeleteBackward/DeleteForward` → Position; `Undo/Redo() (Position, bool)`; `Version()`; `Save` / `SaveForce`; **novo em S1.1:** `ReplaceLines(start, end int, lines []string) Position` (1 patch de undo, não coalescible).
+- `vault`: `Open` / `List` / `Resolve` / `Rescan` (inalterado em S1).
+- `mdparse`: `Parse` → `[]Block` cobertura total; `Kind` inclui `Table`; `WikiLinkAt` (inalterado em S1).
+- `render`: `Block(…)` determinístico; tabelas via `renderTable` (widget **não** precisa chamar render — View própria em `blockedit`).
+- `editor`: `New` / `Update` / `View` / `SetSize` / `Cursor` / `Doc` / `SetDoc`; msgs `FollowLinkMsg` / `AutocompleteMsg`; **novo:** `active blockedit.Widget`, `BlockEditHint() string`; lazy-raw (`editing`) permanece para fence/code.
+- `blockedit` (**novo**): `Widget` + `OpenTable` + `Signal{Continue,Commit,Cancel}`.
 
-## Tasks restantes — o que fazer + critérios de aceite
+## Keybindings relevantes (S1)
 
-### Task 6 — REVIEW pendente
-Implementação commitada (e2254d4), suite verde. Falta: code review (spec + qualidade) e fixes se houver Critical/Important. Aceite da implementação (já coberto por testes, reviewer confere):
-- Cursor em QUALQUER linha de tabela/fence → bloco INTEIRO cru; sai → renderizado de novo.
-- Doc de 100+ blocos: `View()` retorna exatamente `height` linhas; blocos fora da janela não são renderizados.
-- Scroll segue cursor; prefix sums = soma das alturas; goal-column nas setas; CJK width 2 no wrap do bloco cru.
-- Digitar reflete na View; undo restaura View + cursor.
-- API produzida (contrato p/ Tasks 7-10): `editor.New(d *doc.Document, th theme.Theme, isBroken func(string) bool) Model`; `Update(tea.Msg) (Model, tea.Cmd)`; `View() string` (exatamente height linhas); `SetSize(w, h int)`; `Cursor() doc.Position`; `Doc() *doc.Document`; `SetDoc(*doc.Document)`; msgs `editor.FollowLinkMsg{Target string}` (Ctrl+]) e `editor.AutocompleteMsg{Query string}` (ao digitar `[[`).
+| Contexto | Tecla | Ação |
+|----------|-------|------|
+| Tabela renderizada | Enter / 1º rune | Abre table widget |
+| Widget | Tab / S-Tab / setas | Navega células |
+| Widget | Esc | Cancel (sem Write) |
+| Widget | Ctrl+Shift+↑↓←→ | Del/add row/col |
+| Widget | Ctrl+L | Cicla alinhamento da coluna |
+| Widget ativo + sair do bloco | ↑/↓ além da borda | Commit + move |
+| Fence (inalterado) | Enter / 1º rune | Lazy-raw |
 
-### Task 7 — `internal/ui` + `cmd/mdit`
-**Como:** `App` tea.Model raiz (bubbletea v1, WithAltScreen): modos edit|prompt; statusbar (arquivo, dirty `[+]`, linha:col, hints); Ctrl+S (ErrExternalChange → prompt [o]verwrite/[r]eload/[c]ancel); Ctrl+Q (dirty → [s]ave/[d]iscard/[c]ancel); main.go: arg arquivo→vault=dir do arquivo; dir→vault=dir; panic guard: defer recover → grava `<path>.mdit-recover` + restaura terminal.
-**Aceite:** teatest: abrir doc → heading renderizado; digitar+Ctrl+S → conteúdo em disco; Ctrl+Q dirty → prompt → `d` sai sem salvar. QA manual: rodar no terminal real (tmux), digitar/salvar/sair. Commit: `feat(ui): runnable editor app with statusbar and prompts`.
+## Fora de escopo (reafirmado)
 
-### Task 8 — Fuzzy finder
-**Como:** estado modeFinder; overlay centrado com `bubbles/list` (filtro fuzzy ativo) sobre `vault.List()`; Enter abre (prompt se dirty), Esc fecha.
-**Aceite:** teatest: Ctrl+P lista notas; filtro reduz; Enter troca doc (statusbar); Esc volta intacto. Commit: `feat(ui): fuzzy note finder`.
-
-### Task 9 — Wikilinks completos
-**Como:** Ctrl+] → `mdparse.WikiLinkAt(linha crua, col)` → `vault.Resolve` → abre (dirty prompt) e push no histórico; falha → statusbar "broken link: X". Ctrl+B pop histórico. Autocomplete: `[[` digitado → popup ancorado no cursor filtrando notas a cada rune; Enter insere `nome]]`; Esc mantém texto. Broken render: `IsBroken` do editor = `!vault.Resolve`.
-**Aceite:** teatest com vault fixture (a.md com `[[b]]`+`[[nope]]`, b.md): Ctrl+] em `[[b]]` abre b.md; Ctrl+B volta; `[[nope]]` → aviso statusbar; `[[` → popup, filtrar `b`, Enter → `[[b]]` no texto. Commit: `feat(wikilinks): follow, back, autocomplete, broken-link highlight`.
-
-### Task 10 — Zen mode
-**Como:** modeZen: layout do editor com cursorBlock=-1 (nada cru, reusa cache), coluna centrada `min(width,80)`, scroll ↑/↓/PgUp/PgDn/Home/End, edição ignorada, statusbar mínima (`zen │ ^E back`). Ctrl+E alterna preservando cursor/scroll.
-**Aceite:** teatest: Ctrl+E → bloco do cursor renderizado (não cru), linhas ≤80 e centradas; digitar não muda `doc.Version()`; Ctrl+E volta com bloco cru de novo. Commit: `feat(zen): read-only rendered mode`.
-
-### Task 11 — Integração, CI, README
-**Como:** teste e2e teatest (abrir vault → editar → autocomplete → seguir link → voltar → zen → salvar+sair); `.github/workflows/ci.yml` (matrix ubuntu/macos/windows, Go 1.26, CGO_ENABLED=0, test + golangci-lint em job linux); `.golangci.yml` (padrão + errcheck + staticcheck); README: features, install `go install github.com/carvalhosauro/mdit/cmd/mdit@latest`, keybindings, licença.
-**Aceite:** e2e verde nos 3 OS via CI; README cobre tudo acima. Commit: `chore: integration test, ci, readme`.
-
-## Pós-MVP (fora de escopo agora — NÃO implementar)
-
-Temas configuráveis, busca full-text/incremental, backlinks, criar nota ao seguir link quebrado, tabs, IA, export HTML, vim mode, mouse, line numbers, parse incremental, "lazy raw" de tabelas, SQLite no vault.
-
-## Pendências conhecidas (minors de review, endereçar na review final / Task 11)
-
-- doc: métodos de edição panicam em posição inválida (sem clamp); `Dirty()` monotônico (undo até estado salvo continua dirty — UI pode over-prompt); arquivo novo vazio salva `"\n"`; guard redundante hasPath.
-- vault: trim de extensão só `.md`/`.MD`; subdir ilegível aborta scan (fail-fast).
-- mdparse: `indexByte` duplica `bytes.IndexByte`; `close` shadowing; indented code vira Kind CodeFence (misnomer); WikiLinkAt regex vs parser inline têm aceitação levemente diferente em edges.
+Preview pane, line numbers, vim modes, mouse, imagens, math, temas por arquivo de config, SQLite no vault — ver `docs/ROADMAP.md` Non-goals.
