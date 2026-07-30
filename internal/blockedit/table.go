@@ -173,6 +173,11 @@ func (w *tableWidget) ExitCursor(sig Signal) doc.Position {
 	return doc.Position{Line: w.blockStart, Col: 0}
 }
 
+func (w *tableWidget) WouldLeave(delta int) bool {
+	next := w.focusRow + delta
+	return next < 0 || next >= w.rowCount()
+}
+
 func (w *tableWidget) focusFromCursor(cursor doc.Position, blockStart int, raw []string) {
 	rel := cursor.Line - blockStart
 	if rel < 0 {

@@ -109,18 +109,21 @@ func TestLayout_TableLazyRawUntilEdit(t *testing.T) {
 	}
 }
 
-func TestLayout_TableRawAfterEnter(t *testing.T) {
+func TestLayout_TableWidgetAfterEnter(t *testing.T) {
 	m := newFixture(t)
 	m.cursorTo(doc.Position{Line: 4, Col: 0})
 	m, _ = key(m, typeKey(tea.KeyEnter))
 	tb := m.testBlockForLine(4)
-	if !m.layouts[tb].raw {
-		t.Fatal("table should be raw after Enter")
+	if !m.hasBlockEdit() {
+		t.Fatal("table should open widget after Enter")
+	}
+	if m.layouts[tb].raw {
+		t.Fatal("table widget must not use raw layout")
 	}
 	got := joinStrip(m.layouts[tb].lines)
-	for _, want := range []string{"| A | B |", "| - | - |", "| 1 | 2 |"} {
+	for _, want := range []string{"A", "B", "1", "2"} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("raw table missing %q, got %q", want, got)
+			t.Fatalf("widget missing %q, got %q", want, got)
 		}
 	}
 }

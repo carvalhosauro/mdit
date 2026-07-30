@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/carvalhosauro/mdit/internal/blockedit"
 	"github.com/carvalhosauro/mdit/internal/doc"
 	"github.com/carvalhosauro/mdit/internal/mdparse"
 	"github.com/carvalhosauro/mdit/internal/render"
@@ -37,10 +38,16 @@ type Model struct {
 	width, height int
 
 	cursor  doc.Position
-	goalCol int  // remembered target column for vertical (up/down) motion
-	scroll  int  // top screen row of the viewport
-	zen     bool // when true, all blocks are rendered (no raw cursor block)
-	editing bool // lazy-raw: structural cursor block shown raw only while true
+	goalCol int              // remembered target column for vertical (up/down) motion
+	scroll  int              // top screen row of the viewport
+	zen     bool             // when true, all blocks are rendered (no raw cursor block)
+	editing bool             // lazy-raw: structural cursor block shown raw only while true
+	active  blockedit.Widget // structured block editor (S1: table); nil = none
+
+	// Captured when opening a widget so Commit/Cancel can restore range/cursor.
+	widgetBlockStart int
+	widgetBlockEnd   int
+	cursorBeforeOpen doc.Position
 
 	// Selection is editor state (not doc): selOn+selAnchor with cursor as the
 	// other end. register is the internal yank/paste buffer (S0).
@@ -103,6 +110,7 @@ func (m *Model) SetDoc(d *doc.Document) {
 	m.scroll = 0
 	m.clearSelection()
 	m.editing = false
+	m.active = nil
 	m.blocks = nil
 	m.layouts = nil
 	m.prefix = nil
@@ -133,7 +141,22 @@ func (m *Model) SetPlaceholder(s string) { m.placeholder = s }
 // SetZen toggles read-only fully-rendered mode (no raw cursor block).
 func (m *Model) SetZen(on bool) {
 	m.zen = on
+	if on {
+		m.active = nil
+		m.editing = false
+	}
 	m.recompute()
+}
+
+// hasBlockEdit reports whether a structured block widget is active.
+func (m Model) hasBlockEdit() bool { return m.active != nil }
+
+// BlockEditHint returns a short English status hint when a widget is active.
+func (m Model) BlockEditHint() string {
+	if m.active == nil {
+		return ""
+	}
+	return "table │ tab cell · ^⇧↓ row · esc cancel"
 }
 
 // Zen reports whether the editor is in zen (fully rendered) mode.
@@ -185,7 +208,10 @@ func (m Model) View() string {
 			b.WriteByte('\n')
 		}
 		if !m.zen && sr == curRow {
-			if m.cursorBlockRaw() {
+			if m.active != nil {
+				// Widget paints its own focus; don't overlay the doc caret.
+				b.WriteString(m.screenLine(sr))
+			} else if m.cursorBlockRaw() {
 				b.WriteString(m.renderCursorRow())
 			} else {
 				// Lazy-raw structural: keep content readable but show a caret so

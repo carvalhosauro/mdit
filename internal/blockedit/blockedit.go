@@ -34,4 +34,8 @@ type Widget interface {
 
 	// ExitCursor returns a best-effort raw doc.Position after leaving the widget.
 	ExitCursor(sig Signal) doc.Position
+
+	// WouldLeave reports whether a vertical motion by delta should exit the
+	// widget (editor Commits then applies the motion outside the block).
+	WouldLeave(delta int) bool
 }

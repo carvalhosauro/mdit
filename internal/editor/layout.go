@@ -87,21 +87,29 @@ func (m *Model) recompute() {
 	prevBlock := m.cursorBlock
 	m.cursorBlock = blockIndexForLine(m.blocks, m.cursor.Line)
 	if m.cursorBlock != prevBlock {
-		// Leaving a block drops lazy-raw editing; re-entering starts rendered.
+		// Leaving a block drops lazy-raw editing and discards an open widget
+		// (S1.6 commits before motion that leaves; this is the safety net).
 		m.editing = false
+		m.active = nil
 	}
 
 	m.layouts = make([]blockLayout, len(m.blocks))
 	m.prefix = make([]int, len(m.blocks)+1)
 	for i := range m.blocks {
 		var lines []string
-		// Lazy-raw (L1): structural kinds stay rendered under the cursor until
-		// editing is armed; textual kinds stay eager-raw (WYSIWYG).
-		raw := !m.zen && i == m.cursorBlock && (!isStructural(m.blocks[i].Kind) || m.editing)
-		if raw {
-			lines = m.rawBlockLines(i)
+		var raw bool
+		if !m.zen && i == m.cursorBlock && m.active != nil {
+			lines = m.active.Lines(m.effWidth())
+			raw = false
 		} else {
-			lines = m.renderedLines(i)
+			// Lazy-raw (L1): structural kinds stay rendered under the cursor until
+			// editing is armed; textual kinds stay eager-raw (WYSIWYG).
+			raw = !m.zen && i == m.cursorBlock && (!isStructural(m.blocks[i].Kind) || m.editing)
+			if raw {
+				lines = m.rawBlockLines(i)
+			} else {
+				lines = m.renderedLines(i)
+			}
 		}
 		m.layouts[i] = blockLayout{raw: raw, lines: lines, height: len(lines)}
 		m.prefix[i+1] = m.prefix[i] + len(lines)
