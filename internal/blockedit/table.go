@@ -2,6 +2,7 @@ package blockedit
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/carvalhosauro/mdit/internal/doc"
 	tea "github.com/charmbracelet/bubbletea"
@@ -64,13 +65,59 @@ func OpenTable(rawLines []string, cursor doc.Position, blockStart int) (Widget, 
 }
 
 func (w *tableWidget) Update(msg tea.Msg) (Widget, tea.Cmd, Signal) {
-	// Key handling lands in S1.3 / S1.4.
+	key, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return w, nil, Continue
+	}
+	switch key.Type {
+	case tea.KeyEsc:
+		return w, nil, Cancel
+	case tea.KeyTab:
+		w.moveFocus(1)
+		return w, nil, Continue
+	case tea.KeyShiftTab:
+		w.moveFocus(-1)
+		return w, nil, Continue
+	case tea.KeyEnter:
+		w.moveVertical(1)
+		return w, nil, Continue
+	case tea.KeyLeft:
+		w.moveLeft()
+		return w, nil, Continue
+	case tea.KeyRight:
+		w.moveRight()
+		return w, nil, Continue
+	case tea.KeyUp:
+		w.moveVertical(-1)
+		return w, nil, Continue
+	case tea.KeyDown:
+		w.moveVertical(1)
+		return w, nil, Continue
+	case tea.KeyBackspace:
+		w.backspace()
+		return w, nil, Continue
+	case tea.KeyDelete:
+		w.deleteForward()
+		return w, nil, Continue
+	case tea.KeySpace:
+		w.insertRunes([]rune{' '})
+		return w, nil, Continue
+	case tea.KeyRunes:
+		if len(key.Runes) > 0 {
+			w.insertRunes(key.Runes)
+		}
+		return w, nil, Continue
+	}
 	return w, nil, Continue
 }
 
 func (w *tableWidget) Lines(width int) []string {
-	// Placeholder until S1.3 builds the real view.
-	return w.CommitLines()
+	return w.viewLines(width)
+}
+
+// Focus returns the current cell focus (row, col). row 0 is the header.
+func (w *tableWidget) Focus() (row, col int) {
+	return w.focusRow, w.focusCol
 }
 
 func (w *tableWidget) CommitLines() []string {
@@ -127,7 +174,7 @@ func (w *tableWidget) focusFromCursor(cursor doc.Position, blockStart int, raw [
 		}
 	}
 	w.focusCol = 0
-	w.cellCol = 0
+	w.cellCol = utf8.RuneCountInString(w.cell(w.focusRow, w.focusCol))
 	_ = raw
 }
 
