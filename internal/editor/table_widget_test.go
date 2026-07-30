@@ -89,6 +89,98 @@ func TestTableWidget_FenceStillLazyRaw(t *testing.T) {
 	}
 }
 
+func TestTableWidget_EscDiscardsWithoutVersionBump(t *testing.T) {
+	m := newFixture(t)
+	m.cursorTo(doc.Position{Line: 3, Col: 0})
+	before := m.Doc().Content()
+	v0 := m.Doc().Version()
+	m, _ = key(m, typeKey(tea.KeyEnter))
+	m, _ = key(m, runeKey('Z'))
+	m, _ = key(m, typeKey(tea.KeyEscape))
+	if m.hasBlockEdit() {
+		t.Fatal("Esc should clear widget")
+	}
+	if m.Doc().Version() != v0 {
+		t.Fatalf("Esc must not bump Version, %d→%d", v0, m.Doc().Version())
+	}
+	if m.Doc().Content() != before {
+		t.Fatalf("Esc must restore content\nbefore=%q\nafter=%q", before, m.Doc().Content())
+	}
+	tb := m.testBlockForLine(3)
+	if m.layouts[tb].raw {
+		t.Fatal("table should be rendered after Esc")
+	}
+}
+
+func TestTableWidget_LeaveUpCommitsOnceAndUndoRestores(t *testing.T) {
+	m := newFixture(t)
+	m.cursorTo(doc.Position{Line: 3, Col: 0})
+	before := m.Doc().Content()
+	v0 := m.Doc().Version()
+	m, _ = key(m, typeKey(tea.KeyEnter))
+	m, _ = key(m, runeKey('Z'))
+	// Still on header row → Up leaves the widget and commits.
+	m, _ = key(m, typeKey(tea.KeyUp))
+	if m.hasBlockEdit() {
+		t.Fatal("leave-up should clear widget")
+	}
+	if m.Doc().Version() != v0+1 {
+		t.Fatalf("leave-commit should bump Version once, got %d want %d", m.Doc().Version(), v0+1)
+	}
+	if !strings.Contains(m.Doc().Content(), "AZ") && !strings.Contains(m.Doc().Content(), "ZA") {
+		// Typed at end of "A" → "AZ"
+		t.Fatalf("committed content should include edit, got %q", m.Doc().Content())
+	}
+	m, _ = key(m, tea.KeyMsg{Type: tea.KeyCtrlZ})
+	if m.Doc().Content() != before {
+		t.Fatalf("one Undo should restore pre-edit content\nwant %q\ngot  %q", before, m.Doc().Content())
+	}
+	if m.hasBlockEdit() {
+		t.Fatal("undo should not reopen widget")
+	}
+}
+
+func TestTableWidget_LeaveDownCommits(t *testing.T) {
+	m := newFixture(t)
+	m.cursorTo(doc.Position{Line: 3, Col: 0})
+	v0 := m.Doc().Version()
+	m, _ = key(m, typeKey(tea.KeyEnter))
+	// Move to last body row then Down to leave.
+	m, _ = key(m, typeKey(tea.KeyEnter)) // header → body
+	m, _ = key(m, runeKey('Q'))
+	m, _ = key(m, typeKey(tea.KeyDown)) // leave from last body row
+	if m.hasBlockEdit() {
+		t.Fatal("leave-down should clear widget")
+	}
+	if m.Doc().Version() != v0+1 {
+		t.Fatalf("Version=%d want %d", m.Doc().Version(), v0+1)
+	}
+	if !strings.Contains(m.Doc().Line(5), "Q") && !strings.Contains(strings.Join(m.Doc().Lines(), "\n"), "1Q") && !strings.Contains(strings.Join(m.Doc().Lines(), "\n"), "Q1") {
+		// body cell was "1", typed at end → "1Q"
+		joined := strings.Join(m.Doc().Lines(), "\n")
+		if !strings.Contains(joined, "1Q") {
+			t.Fatalf("expected body edit in content, got %q", joined)
+		}
+	}
+}
+
+func TestTableWidget_TypingDoesNotBumpVersionUntilCommit(t *testing.T) {
+	m := newFixture(t)
+	m.cursorTo(doc.Position{Line: 3, Col: 0})
+	v0 := m.Doc().Version()
+	m, _ = key(m, typeKey(tea.KeyEnter))
+	for _, r := range "hello" {
+		m, _ = key(m, runeKey(r))
+		if m.Doc().Version() != v0 {
+			t.Fatalf("typing must not bump Version, got %d", m.Doc().Version())
+		}
+	}
+	m, _ = key(m, typeKey(tea.KeyUp)) // commit
+	if m.Doc().Version() != v0+1 {
+		t.Fatalf("single commit bump, got %d want %d", m.Doc().Version(), v0+1)
+	}
+}
+
 func TestTableWidget_MalformedFallsBackToRaw(t *testing.T) {
 	prev := openTableFn
 	openTableFn = func([]string, doc.Position, int) (blockedit.Widget, bool) {
